@@ -1,10 +1,16 @@
+local osys = require("cmake-tools.osys")
 local const = {
   cmake_command = "cmake", -- this is used to specify cmake command path
   ctest_command = "ctest", -- this is used to specify ctest command path
   cmake_regenerate_on_save = true, -- auto generate when save CMakeLists.txt
   cmake_generate_options = { "-DCMAKE_EXPORT_COMPILE_COMMANDS=1" }, -- this will be passed when invoke `CMakeGenerate`
   cmake_build_options = {}, -- this will be passed when invoke `CMakeBuild`
-  cmake_build_directory = "out/${variant:buildType}", -- this is used to specify generate directory for cmake
+  cmake_build_directory = function()
+    if osys.iswin32 then
+      return "out\\${variant:buildType}"
+    end
+    return "out/${variant:buildType}"
+  end, -- this is used to specify generate directory for cmake
   cmake_soft_link_compile_commands = true, -- this will automatically make a soft link from compile commands file to project root dir
   cmake_compile_commands_from_lsp = false, -- this will automatically set compile commands file location using lsp, to use it, please set `cmake_soft_link_compile_commands` to false
   cmake_kits_path = nil, -- this is used to specify global cmake kits path, see CMakeKits for detailed usage
@@ -31,6 +37,12 @@ local const = {
         encoding = "utf-8",
         auto_close_when_success = true, -- typically, you can use it with the "always" option; it will auto-close the quickfix buffer if the execution is successful.
       },
+      toggleterm = {
+        direction = "float", -- 'vertical' | 'horizontal' | 'tab' | 'float'
+        close_on_exit = false, -- whether close the terminal when exit
+        auto_scroll = true, -- whether auto scroll to the bottom
+        singleton = true, -- single instance, autocloses the opened one, if present
+      },
       overseer = {
         new_task_opts = {
           strategy = {
@@ -46,9 +58,9 @@ local const = {
         split_size = 11,
 
         -- Window handling
-        single_terminal_per_instance = true, -- Single viewport, multiple windows
-        single_terminal_per_tab = true, -- Single viewport per tab
-        keep_terminal_static_location = true, -- Static location of the viewport if avialable
+        single_terminal_per_instance = true, -- Single instance, multiple windows
+        single_terminal_per_tab = true, -- Single instance per tab
+        keep_terminal_static_location = true, -- Static location of the instance if avialable
 
         -- Running Tasks
         start_insert = false, -- If you want to enter terminal with :startinsert upon using :CMakeRun
@@ -68,6 +80,12 @@ local const = {
         encoding = "utf-8",
         auto_close_when_success = true, -- typically, you can use it with the "always" option; it will auto-close the quickfix buffer if the execution is successful.
       },
+      toggleterm = {
+        direction = "float", -- 'vertical' | 'horizontal' | 'tab' | 'float'
+        close_on_exit = false, -- whether close the terminal when exit
+        auto_scroll = true, -- whether auto scroll to the bottom
+        singleton = true, -- single instance, autocloses the opened one, if present
+      },
       overseer = {
         new_task_opts = {
           strategy = {
@@ -83,9 +101,9 @@ local const = {
         split_size = 11,
 
         -- Window handling
-        single_terminal_per_instance = true, -- Single viewport, multiple windows
-        single_terminal_per_tab = true, -- Single viewport per tab
-        keep_terminal_static_location = true, -- Static location of the viewport if avialable
+        single_terminal_per_instance = true, -- Single instance, multiple windows
+        single_terminal_per_tab = true, -- Single instance per tab
+        keep_terminal_static_location = true, -- Static location of the instance if avialable
 
         -- Running Tasks
         start_insert = false, -- If you want to enter terminal with :startinsert upon using :CMakeRun
@@ -100,6 +118,7 @@ local const = {
     spinner = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }, -- icons used for progress display
     refresh_rate_ms = 100, -- how often to iterate icons
   },
+  cmake_virtual_text_support = true, -- Show the target related to current file using virtual text (at right corner)
 }
 
 return const

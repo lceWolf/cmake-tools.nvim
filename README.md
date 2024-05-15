@@ -2,8 +2,6 @@
 
 <p align="center"><img src="./docs/images/demo.gif"/></p>
 
-> With *executor* and *runner* both set to overseer.
-
 <h2 align="center">🔥CMake Tools for Neovim which is written in pure lua.🔥</h2>
 
 > CREDIT:
@@ -16,7 +14,8 @@ The goal of this plugin is to offer a comprehensive, convenient, and powerful wo
 
 - Require Neovim (>=0.7).
 - Require [plenary](https://github.com/nvim-lua/plenary.nvim).
-- Allow integerating with [overseer](https://github.com/stevearc/overseer.nvim).
+- Allow integerating with [overseer](https://github.com/stevearc/overseer.nvim), optional, if you want this feature, please install it firstly.
+- Allow integerating with [toggleterm](https://github.com/akinsho/toggleterm.nvim), optional, if you want this feature, please install it firstly.
 - Install it like any other Neovim plugin.
   - [lazy.nvim](https://github.com/folke/lazy.nvim): `return { 'Civitasv/cmake-tools.nvim' }`
   - [packer.nvim](https://github.com/wbthomason/packer.nvim): `use 'Civitasv/cmake-tools.nvim'`
@@ -25,6 +24,7 @@ The goal of this plugin is to offer a comprehensive, convenient, and powerful wo
 ## :balloon: Configuration
 
 ```lua
+local osys = require("cmake-tools.osys")
 require("cmake-tools").setup {
   cmake_command = "cmake", -- this is used to specify cmake command path
   ctest_command = "ctest", -- this is used to specify ctest command path
@@ -35,7 +35,12 @@ require("cmake-tools").setup {
   --       ${kit}
   --       ${kitGenerator}
   --       ${variant:xx}
-  cmake_build_directory = "out/${variant:buildType}", -- this is used to specify generate directory for cmake, allows macro expansion, relative to vim.loop.cwd()
+  cmake_build_directory = function()
+    if osys.iswin32 then
+      return "out\\${variant:buildType}"
+    end
+    return "out/${variant:buildType}"
+  end, -- this is used to specify generate directory for cmake, allows macro expansion, can be a string or a function returning the string, relative to cwd.
   cmake_soft_link_compile_commands = true, -- this will automatically make a soft link from compile commands file to project root dir
   cmake_compile_commands_from_lsp = false, -- this will automatically set compile commands file location using lsp, to use it, please set `cmake_soft_link_compile_commands` to false
   cmake_kits_path = nil, -- this is used to specify global cmake kits path, see CMakeKits for detailed usage
@@ -61,6 +66,12 @@ require("cmake-tools").setup {
         size = 10,
         encoding = "utf-8", -- if encoding is not "utf-8", it will be converted to "utf-8" using `vim.fn.iconv`
         auto_close_when_success = true, -- typically, you can use it with the "always" option; it will auto-close the quickfix buffer if the execution is successful.
+      },
+      toggleterm = {
+        direction = "float", -- 'vertical' | 'horizontal' | 'tab' | 'float'
+        close_on_exit = false, -- whether close the terminal when exit
+        auto_scroll = true, -- whether auto scroll to the bottom
+        singleton = true, -- single instance, autocloses the opened one, if present
       },
       overseer = {
         new_task_opts = {
@@ -106,6 +117,12 @@ require("cmake-tools").setup {
         encoding = "utf-8",
         auto_close_when_success = true, -- typically, you can use it with the "always" option; it will auto-close the quickfix buffer if the execution is successful.
       },
+      toggleterm = {
+        direction = "float", -- 'vertical' | 'horizontal' | 'tab' | 'float'
+        close_on_exit = false, -- whether close the terminal when exit
+        auto_scroll = true, -- whether auto scroll to the bottom
+        singleton = true, -- single instance, autocloses the opened one, if present
+      },
       overseer = {
         new_task_opts = {
             strategy = {
@@ -142,6 +159,7 @@ require("cmake-tools").setup {
     spinner = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }, -- icons used for progress display
     refresh_rate_ms = 100, -- how often to iterate icons
   },
+  cmake_virtual_text_support = true, -- Show the target related to current file using virtual text (at right corner)
 }
 ```
 
@@ -150,6 +168,8 @@ Generally, the default is enough.
 *And attention, when you firstly enter a new project, a session file for this project will be created, and `cmake_generate_options`, `cmake_build_options`, `cmake_build_directory` in your configuration will be used to initialize some fields of it. Then, if you reopen this project, it will reuse this session file to initialize these fields, or, you can think this project has its own settings, so if you change the values in global configuration, it will not reflect on these projects, you should refresh these fields by your own. Also see [session docs](./docs/sessions.md) and issue [#162](https://github.com/Civitasv/cmake-tools.nvim/issues/162).*
 
 ## :magic_wand: Docs
+
+*Our plugin will automatically create a buffer named \*cmake-tools\*, all commands executed by this plugin will be dumped in this buffer, so when something goes wrong, you can know excatly what happend.*
 
 1. [basic usage](./docs/basic_usage.md)
 2. [settings](./docs/settings.md)

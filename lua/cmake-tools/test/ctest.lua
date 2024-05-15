@@ -1,6 +1,7 @@
 local Job = require("plenary.job")
 local utils = require("cmake-tools.utils")
 local const = require("cmake-tools.const")
+local terminal = require("cmake-tools.terminal")
 
 local ctest = {}
 
@@ -31,16 +32,18 @@ function ctest.list_all_tests(build_dir)
   return tests
 end
 
-function ctest.run(ctest_command, test_name, build_dir, env, config)
+function ctest.run(ctest_command, test_name, build_dir, env, config, opt)
   local cmd = ctest_command
-  local args = { "--test-dir", build_dir, "-R", test_name }
-  utils.execute(
+  opt = opt or {}
+
+  local args = { "--test-dir", utils.transform_path(build_dir), "-R", test_name, opt.args }
+  utils.run(
     cmd,
     config.env_script,
     env,
     args,
     config.cwd,
-    config.executor,
+    config.runner,
     nil,
     const.cmake_notifications
   )

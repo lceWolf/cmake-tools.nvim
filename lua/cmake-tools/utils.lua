@@ -3,6 +3,7 @@ local osys = require("cmake-tools.osys")
 local Result = require("cmake-tools.result")
 local Types = require("cmake-tools.types")
 local notification = require("cmake-tools.notification")
+local scratch = require("cmake-tools.scratch")
 
 ---@alias executor_conf {name:string, opts:table}
 ---@alias runner_conf {name:string, opts:table}
@@ -85,8 +86,21 @@ end
 function utils.softlink(src, target)
   if utils.file_exists(src) and not utils.file_exists(target) then
     -- if we don't always use terminal
-    local cmd = "silent exec " .. '"!cmake -E create_symlink ' .. src .. " " .. target .. '"'
+    local cmd = "exec "
+      .. "'!cmake -E create_symlink "
+      .. utils.transform_path(src)
+      .. " "
+      .. utils.transform_path(target)
+      .. "'"
     vim.cmd(cmd)
+  end
+end
+
+function utils.transform_path(path)
+  if path[1] ~= '"' and string.find(path, " ") then
+    return '"' .. path .. '"'
+  else
+    return path
   end
 end
 
@@ -144,9 +158,12 @@ function utils.has_active_job(runner_data, executor_data)
 end
 
 local notify_update_line = function(out, err)
+  if not notification.notification.enabled then
+    return
+  end
   local line = err and err or out
   if line ~= nil then
-    if line and line:match("^%[%s*(%d+)%s*%%%]") then -- only show lines containing build progress e.g [ 12%]
+    if line and vim.fn.match(line, "^%[%s*(%d+)%s*%%%]") then -- only show lines containing build progress e.g [ 12%]
       notification.notification.id = notification.notify( -- notify with percentage and message
         line,
         err and "warn" or notification.notification.level,
@@ -181,6 +198,10 @@ function utils.run(cmd, env_script, env, args, cwd, runner, on_success, cmake_no
     notification.update_spinner()
   end
 
+  local _mes =
+    { "[RUN]:", cmd, table.concat(args, " "), "<ENV>", table.concat(env, " "), "{CWD}", cwd }
+  scratch.append(table.concat(_mes, " "))
+
   utils.get_runner(runner.name).run(cmd, env_script, env, args, cwd, runner.opts, function(code)
     local msg = "Exited with code " .. code
     local level = cmake_notifications.level
@@ -208,7 +229,7 @@ end
 ---@param args table arguments to the executable
 ---@param cwd string the directory to run in
 ---@param executor executor_conf the executor or runner
----@param on_success nil|function extra arguments, f.e on_success is a callback to be called when the process finishes
+---@param on_success nil|function extra arguments, f.e on_success is a callback to be called when the process exits with a 0 exit code
 ---@return nil
 function utils.execute(cmd, env_script, env, args, cwd, executor, on_success, cmake_notifications)
   -- save all
@@ -226,6 +247,10 @@ function utils.execute(cmd, env_script, env, args, cwd, executor, on_success, cm
     notification.update_spinner()
   end
 
+  local _mes =
+    { "[EXECUTE]:", cmd, table.concat(args, " "), "<ENV>", table.concat(env, " "), "{CWD}", cwd }
+  scratch.append(table.concat(_mes, " "))
+
   utils
     .get_executor(executor.name)
     .run(cmd, env_script, env, args, cwd, executor.opts, function(code)
@@ -242,7 +267,7 @@ function utils.execute(cmd, env_script, env, args, cwd, executor, on_success, cm
         { icon = icon, replace = notification.notification.id, timeout = 3000 }
       )
       notification.notification = {} -- reset and stop update_spinner
-      if code == 0 and on_success then
+      if code == 0 and type(on_success) == "function" then
         on_success()
       end
     end, notify_update_line)
