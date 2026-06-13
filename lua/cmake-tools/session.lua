@@ -2,27 +2,40 @@ local osys = require("cmake-tools.osys")
 local utils = require("cmake-tools.utils")
 
 local default_config
+local cache_dir = vim.fn.stdpath("data") .. "/cmake_tools_nvim/"
 
-local session = {
-  dir = {
-    unix = vim.fn.expand("~") .. "/.cache/cmake_tools_nvim/",
-    mac = vim.fn.expand("~") .. "/.cache/cmake_tools_nvim/",
-    win = vim.fn.expand("~") .. "/AppData/Local/cmake_tools_nvim/",
-  },
-}
+local session = {}
 
----@return string
-local function get_cache_path()
-  if osys.islinux then
-    return session.dir.unix
-  elseif osys.ismac then
-    return session.dir.mac
-  elseif osys.iswsl then
-    return session.dir.unix
-  elseif osys.isbsd then
-    return session.dir.unix
-  elseif osys.iswin32 then
-    return session.dir.win
+--- Migrate session files from the legacy cache directory to the new stdpath location
+local function migrate_legacy_cache()
+  -- TODO: this can be dropped after a grace period, maybe
+  local old_dir
+  if osys.iswin32 then
+    old_dir = vim.fn.expand("~") .. "/AppData/Local/cmake_tools_nvim/"
+  else
+    old_dir = vim.fn.expand("~") .. "/.cache/cmake_tools_nvim/"
+  end
+
+  if old_dir == cache_dir or not utils.file_exists(old_dir) then
+    return
+  end
+
+  if not utils.file_exists(cache_dir) then
+    utils.mkdir(cache_dir)
+  end
+
+  local files = vim.fn.glob(old_dir .. "*", false, true)
+  for _, file in ipairs(files) do
+    local filename = vim.fn.fnamemodify(file, ":t")
+    local new_path = cache_dir .. filename
+    if not utils.file_exists(new_path) then
+      vim.fn.rename(file, new_path)
+    end
+  end
+
+  local remaining = vim.fn.glob(old_dir .. "*", false, true)
+  if #remaining == 0 then
+    vim.fn.delete(old_dir, "d")
   end
 end
 
@@ -32,14 +45,15 @@ local function get_current_path(cwd)
   local clean_path = cwd:gsub("/", "")
   clean_path = clean_path:gsub("\\", "")
   clean_path = clean_path:gsub(":", "")
-  return get_cache_path() .. clean_path .. ".lua"
+  return cache_dir .. clean_path .. ".lua"
 end
 
 local function init_cache()
-  local cache_path = get_cache_path()
-  if not utils.file_exists(cache_path) then
-    utils.mkdir(cache_path)
+  if not utils.file_exists(cache_dir) then
+    utils.mkdir(cache_dir)
   end
+
+  migrate_legacy_cache()
 end
 
 ---@param cwd string neovim working directory

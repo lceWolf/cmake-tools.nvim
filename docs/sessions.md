@@ -29,13 +29,7 @@ return {
 For Linux, macOS, Windows, WSL, it will save cache files to:
 
 ```lua
-local session = {
-  dir = {
-    unix = vim.fn.expand("~") .. "/.cache/cmake_tools_nvim/",
-    mac = vim.fn.expand("~") .. "/.cache/cmake_tools_nvim/",
-    win = vim.fn.expand("~") .. "/AppData/Local/cmake_tools_nvim/"
-  }
-}
+local cache_dir = vim.fn.stdpath("data") .. "/cmake_tools_nvim/"
 ```
 
 per project.
