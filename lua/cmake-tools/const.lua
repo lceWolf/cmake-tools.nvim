@@ -1,4 +1,46 @@
 local osys = require("cmake-tools.osys")
+
+-- Error format used to parse command output into quickfix entries. The quickfix
+-- executor/runner parses with this instead of the global 'errorformat', so a build is
+-- matched the same way regardless of how the rest of the config sets that option
+local quickfix_errorformat = table.concat({
+  -- Lines that must not become entries. make points its "*** [Makefile:42: all]"
+  -- summaries at the generated makefile, and gcc/clang frame a diagnostic with an
+  -- include trace and a caret/source-context block.
+  "%-Gg%\\?make[%*\\d]: *** [%f:%l:%m",
+  "%-Gg%\\?make: *** [%f:%l:%m",
+  "%-GIn file included from %f:%l:",
+  "%-GIn file included from %f:%l",
+  "%-G%*[ ]from %f:%l:",
+  "%-G%*[ 0123456789]|%.%#",
+  -- cmake itself, for configure/generate output. %t picks up the E/W.
+  "CMake %trror at %f:%l (%m):",
+  "CMake %tarning at %f:%l (%m):",
+  "CMake %tarning (dev) at %f:%l (%m):",
+  "CMake Deprecation %tarning at %f:%l (%m):",
+  -- gcc/clang, with and without a column
+  "%f:%l:%c: fatal %trror: %m",
+  "%f:%l:%c: %trror: %m",
+  "%f:%l:%c: %tarning: %m",
+  "%f:%l:%c: %tote: %m",
+  "%f:%l:%c: %m",
+  "%f:%l: fatal %trror: %m",
+  "%f:%l: %trror: %m",
+  "%f:%l: %tarning: %m",
+  "%f:%l: %m",
+  -- MSVC / MSBuild
+  "%f(%l\\,%c) %#: %trror %m",
+  "%f(%l\\,%c) %#: %tarning %m",
+  "%f(%l) %#: %trror %m",
+  "%f(%l) %#: %tarning %m",
+  -- make directory tracking, so a build that reports relative paths resolves them
+  -- against the directory make announced rather than against Neovim's cwd
+  "%D%*\\a[%*\\d]: Entering directory %*[`']%f'",
+  "%X%*\\a[%*\\d]: Leaving directory %*[`']%f'",
+  "%D%*\\a: Entering directory %*[`']%f'",
+  "%X%*\\a: Leaving directory %*[`']%f'",
+}, ",")
+
 ---@class Const
 local const = {
   cmake_command = "cmake", -- this is used to specify cmake command path
@@ -47,6 +89,7 @@ local const = {
         size = 10,
         encoding = "utf-8",
         auto_close_when_success = true, -- typically, you can use it with the "always" option; it will auto-close the quickfix buffer if the execution is successful.
+        errorformat = quickfix_errorformat, -- see `quickfix_errorformat` above
       },
       toggleterm = {
         direction = "float", -- 'vertical' | 'horizontal' | 'tab' | 'float'
@@ -95,6 +138,7 @@ local const = {
         size = 10,
         encoding = "utf-8",
         auto_close_when_success = true, -- typically, you can use it with the "always" option; it will auto-close the quickfix buffer if the execution is successful.
+        errorformat = quickfix_errorformat, -- see `quickfix_errorformat` above
       },
       toggleterm = {
         direction = "float", -- 'vertical' | 'horizontal' | 'tab' | 'float'

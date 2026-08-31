@@ -74,6 +74,7 @@ require("cmake-tools").setup {
         size = 10,
         encoding = "utf-8", -- if encoding is not "utf-8", it will be converted to "utf-8" using `vim.fn.iconv`
         auto_close_when_success = true, -- typically, you can use it with the "always" option; it will auto-close the quickfix buffer if the execution is successful.
+        errorformat = "...", -- the errorformat used to parse the output, see `:h errorformat`. Defaults to a format covering gcc/clang, MSVC and cmake itself. Set it to "" to use the global 'errorformat' instead.
       },
       toggleterm = {
         direction = "float", -- 'vertical' | 'horizontal' | 'tab' | 'float'
@@ -120,6 +121,7 @@ require("cmake-tools").setup {
         size = 10,
         encoding = "utf-8",
         auto_close_when_success = true, -- typically, you can use it with the "always" option; it will auto-close the quickfix buffer if the execution is successful.
+        errorformat = "...", -- the errorformat used to parse the output, see `:h errorformat`. Defaults to a format covering gcc/clang, MSVC and cmake itself. Set it to "" to use the global 'errorformat' instead.
       },
       toggleterm = {
         direction = "float", -- 'vertical' | 'horizontal' | 'tab' | 'float'

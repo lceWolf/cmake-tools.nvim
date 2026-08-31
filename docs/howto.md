@@ -474,15 +474,26 @@ it looks like:
 
 Calling `:lua RunPerf()` will then run `perf record --call-graph dwarf {target} {launch_args}`.
 
-## Fix errors in quickfix list (Windows/msvc)
+## Fix errors in quickfix list
 
-If the errors and warnings are not being parsed correctly from the build output then navigation via the quickfix list will not function. It is possible that additional errorformats (`:h errorformat`) are required. Adding the following to your init.lua, or other suitable lua file, will enable quickfix support for MSBuild and cl.exe:
+If errors and warnings are not parsed from the build output, navigation via the quickfix list
+will not work. The quickfix executor parses its output with its own `errorformat` option
+(`:h errorformat`) rather than the global `'errorformat'`, so this is configured on the
+executor:
+
 ```lua
--- MSBuild:
-vim.opt.errorformat:append([[\ %#%f(%l\,%c):\ %m]])
--- cl.exe:
-vim.opt.errorformat:append([[\ %#%f(%l)\ :\ %#%t%[A-z]%#\ %m]])
+require("cmake-tools").setup({
+  cmake_executor = {
+    name = "quickfix",
+    opts = { errorformat = "<your patterns>" },
+  },
+})
 ```
+
+The default already covers gcc, clang, MSVC/MSBuild and cmake's own diagnostics, so you should
+only need this for a compiler or tool that formats its output differently. See
+[the executor docs](./executor_and_runner.md#errorformat) for how to extend the default rather
+than replace it.
 
 ## Experimental: Additional command runners (executors)
 

@@ -67,8 +67,38 @@ opts = {
   size = 10, -- height of the quickfix window
   encoding = "utf-8", -- if it is not "utf-8", the output is converted with `vim.fn.iconv`
   auto_close_when_success = true, -- close the quickfix window when the command succeeded
+  errorformat = "...", -- how to parse the output into quickfix entries
 },
 ```
+
+### errorformat
+
+The output is parsed into quickfix entries with `errorformat` (`:h errorformat`) rather than
+with the global `'errorformat'` option. This keeps builds matching the same way no matter how
+the rest of your config sets that option, and it means the plugin does not have to mutate a
+global to get its own output parsed.
+
+The default covers gcc and clang, MSVC and MSBuild, cmake's own `CMake Error at ...` /
+`CMake Warning at ...` diagnostics, and `make`'s directory tracking. Lines that match nothing
+are still appended as plain text, so build progress remains visible.
+
+To add a pattern instead of replacing the default:
+
+```lua
+local const = require("cmake-tools.const")
+require("cmake-tools").setup({
+  cmake_executor = {
+    name = "quickfix",
+    opts = {
+      errorformat = const.cmake_executor.default_opts.quickfix.errorformat
+        .. ",%f|%l| %m",
+    },
+  },
+})
+```
+
+Set `errorformat = ""` to fall back to the global `'errorformat'`, which is what the plugin
+used before this option existed.
 
 ## Terminal
 

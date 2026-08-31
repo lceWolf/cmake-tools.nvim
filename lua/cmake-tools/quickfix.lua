@@ -3,7 +3,7 @@ local Job = require("plenary.job")
 
 ---@alias quickfix_show '"always"'|'"only_on_error"'
 ---@alias quickfix_position '"belowright"'|'"bottom"'|'"top"'
----@alias quickfix_opts_type {show:quickfix_show, position:quickfix_position, size:number}
+---@alias quickfix_opts_type {show:quickfix_show, position:quickfix_position, size:number, encoding:string, auto_close_when_success:boolean, errorformat:string}
 --
 ---@class quickfix : executor, runner
 local _quickfix = {
@@ -14,13 +14,17 @@ function _quickfix.scroll_to_bottom()
   vim.api.nvim_command("cbottom")
 end
 
-local function append_to_quickfix(encoding, error, data)
+local function append_to_quickfix(opts, error, data)
   local line = error and error or data
-  if encoding ~= "utf-8" then
-    line = vim.fn.iconv(line, encoding, "utf-8")
+  if opts.encoding ~= "utf-8" then
+    line = vim.fn.iconv(line, opts.encoding, "utf-8")
   end
 
-  vim.fn.setqflist({}, "a", { lines = { line } })
+  local what = { lines = { line } }
+  if opts.errorformat and opts.errorformat ~= "" then
+    what.efm = opts.errorformat
+  end
+  vim.fn.setqflist({}, "a", what)
   -- scroll the quickfix buffer to bottom
   if _quickfix.check_scroll() then
     _quickfix.scroll_to_bottom()
@@ -52,18 +56,18 @@ function _quickfix.run(cmd, env_script, env, args, cwd, opts, on_exit, on_output
     cwd = cwd,
     env = env,
     on_stdout = vim.schedule_wrap(function(err, data)
-      append_to_quickfix(opts.encoding, err, data)
+      append_to_quickfix(opts, err, data)
       on_output(data, err)
     end),
     on_stderr = vim.schedule_wrap(function(err, data)
-      append_to_quickfix(opts.encoding, err, data)
+      append_to_quickfix(opts, err, data)
       on_output(data, err)
     end),
     on_exit = vim.schedule_wrap(function(_, code, signal)
       code = signal == 0 and code or 128 + signal
       local msg = "Exited with code " .. code
 
-      append_to_quickfix(opts.encoding, msg)
+      append_to_quickfix(opts, msg)
       if code ~= 0 and opts.show == "only_on_error" then
         _quickfix.show(opts)
         _quickfix.scroll_to_bottom()
