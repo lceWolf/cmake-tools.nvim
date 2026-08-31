@@ -10,6 +10,22 @@ local scratch = require("cmake-tools.scratch")
 
 local utils = {}
 
+---Save all named, modified, normal buffers
+function utils.save_all_named_buffers()
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if
+      vim.api.nvim_buf_is_loaded(buf)
+      and vim.bo[buf].modified
+      and vim.bo[buf].buftype == ""
+      and vim.api.nvim_buf_get_name(buf) ~= ""
+    then
+      vim.api.nvim_buf_call(buf, function()
+        vim.cmd("silent! write")
+      end)
+    end
+  end
+end
+
 function utils.get_cmake_configuration(cwd)
   local cmakelists = Path:new(cwd, "CMakeLists.txt")
   if not cmakelists:is_file() then
@@ -86,31 +102,45 @@ end
 function utils.copyfile(src, target)
   if utils.file_exists(src) then
     -- if we don't always use terminal
-    local cmd = "exec "
-      .. "'!cmake -E copy "
-      .. utils.shell_quote(src)
-      .. " "
-      .. utils.shell_quote(target)
-      .. "'"
+    local cmd = table.concat({
+      "exec",
+      "'!cmake -E copy",
+      utils.shell_quote(src),
+      utils.shell_quote(target) .. "'",
+    }, " ")
     vim.cmd(cmd)
   end
 end
 
 function utils.softlink(src, target)
-  if utils.file_exists(src) and not utils.file_exists(target) then
-    -- if we don't always use terminal
-    local cmd = "exec "
-      .. "'!cmake -E create_symlink "
-      .. utils.shell_quote(src)
-      .. " "
-      .. utils.shell_quote(target)
-      .. "'"
-    vim.cmd(cmd)
+  if not utils.file_exists(src) then
+    return
   end
+
+  local stat = vim.loop.fs_lstat(target)
+  if stat then
+    if stat.type == "link" then
+      if vim.loop.fs_readlink(target) == src then
+        return
+      end
+    else
+      -- target is a regular file, remove it first
+      os.remove(target)
+    end
+  end
+
+  local cmd = table.concat({
+    "exec",
+    "'!cmake -E create_symlink",
+    utils.shell_quote(src),
+    utils.shell_quote(target) .. "'",
+  }, " ")
+  vim.cmd(cmd)
 end
 
 function utils.shell_quote(str)
-  if str[1] ~= '"' and string.find(str, " ") then
+  -- If the string already contains a double quote, assume the caller has handled quoting/escaping and leave it untouched
+  if not string.find(str, '"') and string.find(str, " ") then
     return '"' .. str .. '"'
   else
     return str
@@ -185,6 +215,26 @@ local notify_update_line = function(ntfy)
   end
 end
 
+---Apply wrap_call to a command, prepending the wrapper command and its arguments
+---@param wrap_call string[]|nil table of wrapper command and its arguments
+---@param cmd string the original command
+---@param args table the original arguments
+---@return string cmd the new command
+---@return table args the new arguments
+function utils.apply_wrap_call(wrap_call, cmd, args)
+  if not wrap_call or #wrap_call == 0 then
+    return cmd, args
+  end
+  local new_cmd = wrap_call[1]
+  local new_args = {}
+  for i = 2, #wrap_call do
+    table.insert(new_args, wrap_call[i])
+  end
+  table.insert(new_args, cmd)
+  vim.list_extend(new_args, args)
+  return new_cmd, new_args
+end
+
 ---Run a command using specified executor, this is used by generate, build, clean, install, etc.
 ---@param cmd string the executable to execute
 ---@param env_script string environment setup script
@@ -196,7 +246,7 @@ end
 ---@return nil
 function utils.run(cmd, env_script, env, args, cwd, runner, callback)
   -- save all
-  vim.cmd("silent exec " .. '"wall"')
+  utils.save_all_named_buffers()
 
   local ntfy = notification:new("runner")
 
@@ -239,7 +289,7 @@ end
 ---@return nil
 function utils.execute(cmd, env_script, env, args, cwd, executor, callback)
   -- save all
-  vim.cmd("silent exec " .. '"wall"')
+  utils.save_all_named_buffers()
 
   local ntfy = notification:new("executor")
   ntfy:notify(cmd, "info")
