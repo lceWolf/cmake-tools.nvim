@@ -22,10 +22,11 @@ local function expandMacro(self, str)
   end)
 
   -- macro expansion
-  local source_relative = vim.fn.fnamemodify(self.cwd, ":t")
+  local cwd = utils.normalize(self.cwd)
+  local source_relative = vim.fn.fnamemodify(cwd, ":t")
   str = str:gsub("${sourceDir}", ".") -- sourceDir is relative to the CMakePresests.json file, and should be relative
   str = str:gsub("${sourceParentDir}", function()
-    return vim.fs.dirname(self.cwd)
+    return utils.normalize(vim.fs.dirname(cwd))
   end)
   str = str:gsub("${sourceDirName}", source_relative)
   str = str:gsub("${presetName}", self.name)

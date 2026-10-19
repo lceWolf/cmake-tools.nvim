@@ -147,6 +147,75 @@ describe("utils fs helpers", function()
       assert.equals("/", utils.abspath("/"))
     end)
 
+    it("resolves relative paths against the given base and collapses '..'", function()
+      assert.equals("/src/build/x", utils.abspath("../build/./x/", "/src/proj"))
+    end)
+
+    it("expands a leading '~'", function()
+      assert.equals(utils.join(vim.uv.os_homedir(), "build"), utils.abspath("~/build", "/src"))
+    end)
+
+    it("keeps macros untouched", function()
+      assert.equals(
+        "/src/out/${variant:buildType}",
+        utils.abspath("out/${variant:buildType}", "/src")
+      )
+    end)
+  end)
+
+  describe("join", function()
+    it("normalizes the joined path", function()
+      assert.equals("/a/c/d", utils.join("/a/b/", "../c", "", "./d/"))
+    end)
+
+    it("keeps relative paths relative", function()
+      assert.equals("a/b", utils.join("a", "b"))
+    end)
+  end)
+
+  describe("is_absolute", function()
+    it("does not treat '~' or relative paths as absolute", function()
+      assert.is_true(utils.is_absolute("/a"))
+      assert.is_false(utils.is_absolute("~/a"))
+      assert.is_false(utils.is_absolute("a/b"))
+    end)
+  end)
+
+  describe("on Windows", function()
+    local osys = require("cmake-tools.osys")
+
+    before_each(function()
+      osys.iswin32 = true
+    end)
+
+    after_each(function()
+      osys.iswin32 = vim.fn.has("win32") == 1
+    end)
+
+    it("uses backslashes and collapses '..'", function()
+      assert.equals("C:\\proj\\out\\Debug", utils.join("c:/proj/src", "..\\out", "Debug/"))
+    end)
+
+    it("keeps the drive root", function()
+      assert.equals("C:\\", utils.normalize("C:/"))
+    end)
+
+    it("keeps UNC paths", function()
+      assert.equals("\\\\srv\\share\\build", utils.join("\\\\srv\\share", "build"))
+    end)
+
+    it("detects drive letter and UNC paths as absolute", function()
+      assert.is_true(utils.is_absolute("C:\\proj"))
+      assert.is_true(utils.is_absolute("c:/proj"))
+      assert.is_true(utils.is_absolute("\\\\srv\\share"))
+      assert.is_false(utils.is_absolute("proj\\build"))
+      assert.is_false(utils.is_absolute("~\\proj"))
+    end)
+
+    it("resolves relative paths against a drive base", function()
+      assert.equals("C:\\proj\\out\\Debug", utils.abspath("out/Debug", "C:\\proj"))
+      assert.equals("D:\\other", utils.abspath("D:/other", "C:\\proj"))
+    end)
   end)
 
   describe("get_cmake_configuration", function()

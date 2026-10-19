@@ -107,7 +107,7 @@ function cmake.generate(opt, callback)
       end
       -- Clear CMakeCache.txt
       if config:has_build_directory() then
-        utils.rmfile(vim.fs.joinpath(config:build_directory_path(), "CMakeCache.txt"))
+        utils.rmfile(utils.join(config:build_directory_path(), "CMakeCache.txt"))
       end
       cmake.generate({ fargs = fargs }, callback)
     end)
@@ -294,7 +294,7 @@ function cmake.clean(callback)
   end
 
   local path = config:build_directory_path()
-  if not utils.file_exists(vim.fs.joinpath(path, "CMakeCache.txt")) then
+  if not utils.file_exists(utils.join(path, "CMakeCache.txt")) then
     -- no need to clean up as we do not have a cache
     return
   end
@@ -521,7 +521,7 @@ function cmake.open_runner()
 end
 
 function cmake.open_cache()
-  local path = cmake.get_build_directory() .. "/CMakeCache.txt"
+  local path = utils.join(cmake.get_build_directory(), "CMakeCache.txt")
   local file = io.open(path, "r")
   if file then
     file:close()
@@ -1552,12 +1552,12 @@ function cmake.copy_compile_commands()
     return
   end
 
-  local source = config:build_directory_path() .. "/compile_commands.json"
+  local source = utils.join(config:build_directory_path(), "compile_commands.json")
   local target = const.cmake_compile_commands_options.target
   if type(target) == "function" then
     target = target()
   end
-  local destination = target .. "/compile_commands.json"
+  local destination = utils.join(target, "compile_commands.json")
   utils.copyfile(source, destination)
 end
 
@@ -1566,12 +1566,12 @@ function cmake.compile_commands_from_soft_link()
     return
   end
 
-  local source = config:build_directory_path() .. "/compile_commands.json"
+  local source = utils.join(config:build_directory_path(), "compile_commands.json")
   local target = const.cmake_compile_commands_options.target
   if type(target) == "function" then
     target = target()
   end
-  local destination = target .. "/compile_commands.json"
+  local destination = utils.join(target, "compile_commands.json")
   utils.softlink(source, destination)
 end
 

@@ -5,26 +5,6 @@ local variants = require("cmake-tools.variants")
 local Presets = require("cmake-tools.presets")
 local kits = require("cmake-tools.kits")
 
----Join path segments; on Windows the result only contains backslashes
----@param ... string
----@return string
-local function join(...)
-  local path = vim.fs.joinpath(...)
-  if require("cmake-tools.osys").iswin32 then
-    path = path:gsub("/", "\\")
-  end
-  return path
-end
-
----@param path string
----@return boolean
-local function is_absolute(path)
-  if vim.fn.isabsolutepath(path) == 1 then
-    return true
-  end
-  return require("cmake-tools.osys").iswin32 and path:match("^%a:[\\/]") ~= nil
-end
-
 ---@class Config.BaseSettings
 ---@field env table
 ---@field build_dir string
@@ -126,20 +106,12 @@ function Config:update_build_dir(build_dir, no_expand_build_dir)
     )
   end
 
-  if not is_absolute(build_dir) then
-    build_dir = join(self.cwd, build_dir)
-  end
-  if require("cmake-tools.osys").iswin32 then
-    build_dir = build_dir:gsub("/", "\\")
-  end
+  build_dir = utils.abspath(build_dir, self.cwd)
   self.build_directory = build_dir
-  self.query_directory = join(build_dir, ".cmake", "api", "v1", "query")
-  self.reply_directory = join(build_dir, ".cmake", "api", "v1", "reply")
+  self.query_directory = utils.join(build_dir, ".cmake", "api", "v1", "query")
+  self.reply_directory = utils.join(build_dir, ".cmake", "api", "v1", "reply")
 
-  self.base_settings.build_dir = utils.abspath(no_expand_build_dir)
-  if require("cmake-tools.osys").iswin32 then
-    self.base_settings.build_dir = self.base_settings.build_dir:gsub("/", "\\")
-  end
+  self.base_settings.build_dir = utils.abspath(no_expand_build_dir, self.cwd)
 end
 
 ---Prepare build directory with macro expansion
@@ -211,7 +183,7 @@ function Config:generate_query_files()
     return Result:new(Types.CANNOT_CREATE_DIRECTORY, false, "cannot create directory")
   end
 
-  local codemodel_file = join(query_directory, "codemodel-v2")
+  local codemodel_file = utils.join(query_directory, "codemodel-v2")
   if not utils.is_file(codemodel_file) then
     if not utils.touch(codemodel_file) then
       return Result:new(
@@ -222,7 +194,7 @@ function Config:generate_query_files()
     end
   end
 
-  local cmakeFiles_file = join(query_directory, "cmakeFiles-v1")
+  local cmakeFiles_file = utils.join(query_directory, "cmakeFiles-v1")
   if not utils.is_file(cmakeFiles_file) then
     if not utils.touch(cmakeFiles_file) then
       return Result:new(
@@ -242,7 +214,7 @@ end
 local function find_reply_file(dir, prefix)
   for name, type in vim.fs.dir(dir) do
     if type == "file" and vim.startswith(name, prefix) then
-      return join(dir, name)
+      return utils.join(dir, name)
     end
   end
 end
@@ -285,7 +257,7 @@ end
 ---@param codemodel_target table
 ---@return table
 function Config:get_code_model_target_info(codemodel_target)
-  return utils.read_json(join(self.reply_directory, codemodel_target["jsonFile"]))
+  return utils.read_json(utils.join(self.reply_directory, codemodel_target["jsonFile"]))
 end
 
 ---Check if launch target is built
@@ -329,15 +301,8 @@ end
 ---@param target_info table
 ---@return cmake.Result
 function Config:get_launch_target_from_info(target_info)
-  local target_path = target_info["artifacts"][1]["path"]
-  if require("cmake-tools.osys").iswin32 then
-    target_path = target_path:gsub("/", "\\")
-  end
-  if not is_absolute(target_path) then
-    -- then it is a relative path, based on build directory
-    target_path = join(self.build_directory, target_path)
-  end
-  -- else it is an absolute path
+  -- relative artifact paths are based on the build directory
+  local target_path = utils.abspath(target_info["artifacts"][1]["path"], self.build_directory)
 
   if not utils.is_file(target_path) then
     return Result:new(
@@ -404,12 +369,8 @@ function Config:get_build_target()
     return check_result
   end
   local target_info = check_result.data
-  local target_path = target_info["artifacts"][1]["path"]
-  if not is_absolute(target_path) then
-    -- then it is a relative path, based on build directory
-    target_path = join(self.build_directory, target_path)
-  end
-  -- else it is an absolute path
+  -- relative artifact paths are based on the build directory
+  local target_path = utils.abspath(target_info["artifacts"][1]["path"], self.build_directory)
 
   if not utils.is_file(target_path) then
     return Result:new(
@@ -462,7 +423,7 @@ local function get_targets(config, opt)
       end
       local abs_path = ""
       if type == "executable" then
-        abs_path = config.build_directory .. "/" .. target_info["artifacts"][1]["path"]
+        abs_path = utils.abspath(target_info["artifacts"][1]["path"], config.build_directory)
       end
       if not (opt.only_executable and (type ~= "executable")) then
         if target_name == config.build_target then
@@ -479,7 +440,7 @@ local function get_targets(config, opt)
       end
       if opt.query_sources then -- get all source files related to this target
         for _, source in ipairs(target_info["sources"]) do
-          local source_abs_path = config.cwd .. "/" .. source["path"]
+          local source_abs_path = utils.abspath(source["path"], config.cwd)
           table.insert(
             sources,
             { path = source_abs_path, type = type, name = target_name, display_name = display_name }

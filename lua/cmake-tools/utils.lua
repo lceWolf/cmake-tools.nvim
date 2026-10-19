@@ -26,7 +26,7 @@ function utils.save_all_named_buffers()
 end
 
 function utils.get_cmake_configuration(cwd)
-  local cmakelists = vim.fs.joinpath(cwd, "CMakeLists.txt")
+  local cmakelists = utils.join(cwd, "CMakeLists.txt")
   if not utils.is_file(cmakelists) then
     return Result:new(
       Types.CANNOT_FIND_CMAKE_CONFIGURATION_FILE,
@@ -134,15 +134,45 @@ function utils.read_json(path)
   return decoded
 end
 
----Absolute path without trailing separator
 ---@param path string
 ---@return string
-function utils.abspath(path)
-  local abs = vim.fn.fnamemodify(path, ":p")
-  if #abs > 1 and not abs:match("^%a:[/\\]$") then
-    abs = abs:gsub("[/\\]$", "")
+function utils.normalize(path)
+  local normalized = vim.fs.normalize(path, { expand_env = false, win = osys.iswin32 })
+  if osys.iswin32 then
+    normalized = normalized:gsub("/", "\\")
   end
-  return abs
+  return normalized
+end
+
+---@param path string
+---@return boolean
+function utils.is_absolute(path)
+  if osys.iswin32 then
+    -- drive letter or UNC path
+    return path:match("^%a:[/\\]") ~= nil or path:match("^[/\\][/\\]") ~= nil
+  end
+  return path:sub(1, 1) == "/"
+end
+
+---@param ... string
+---@return string
+function utils.join(...)
+  local segments = vim.tbl_filter(function(segment)
+    return segment ~= ""
+  end, { ... })
+  return utils.normalize(table.concat(segments, "/"))
+end
+
+---Normalized absolute path, relative paths are resolved against base
+---@param path string
+---@param base string? defaults to the current working directory
+---@return string
+function utils.abspath(path, base)
+  path = utils.normalize(path)
+  if utils.is_absolute(path) then
+    return path
+  end
+  return utils.join(base or vim.uv.cwd(), path)
 end
 
 function utils.deepcopy(orig, copies)
