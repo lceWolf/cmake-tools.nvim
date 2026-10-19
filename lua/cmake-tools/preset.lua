@@ -121,7 +121,7 @@ local function resolveConditions(self)
             return true
           end
         end
-        return true
+        return false
       elseif ctype == "allOf" then
         if not vim.isarray(cond.conditions) then
           error("conditions field must be of type array")

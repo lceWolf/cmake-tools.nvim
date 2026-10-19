@@ -398,6 +398,15 @@ describe("ConfigurePreset", function()
       assert.is_false(is_disabled(cond))
     end)
 
+    it("disables the preset when every anyOf condition is false", function()
+      local cond = {
+        type = "anyOf",
+        conditions = { { type = "const", value = false }, { type = "const", value = false } },
+      }
+
+      assert.is_true(is_disabled(cond))
+    end)
+
     it("handles allOf", function()
       local all_true = {
         type = "allOf",
