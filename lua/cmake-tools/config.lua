@@ -258,7 +258,7 @@ function Config:get_cmake_files()
   if not found_file then
     return Result:new(Types.CANNOT_FIND_CODEMODEL_FILE, nil, "Unable to find codemodel file")
   end
-  local codemodel_json = vim.json.decode(utils.read_file(found_file))
+  local codemodel_json = utils.read_json(found_file)
   return Result:new(Types.SUCCESS, codemodel_json["inputs"], "find it")
 end
 
@@ -273,7 +273,7 @@ function Config:get_codemodel_targets()
   if not found_file then
     return Result:new(Types.CANNOT_FIND_CODEMODEL_FILE, nil, "Unable to find codemodel file")
   end
-  local codemodel_json = vim.json.decode(utils.read_file(found_file))
+  local codemodel_json = utils.read_json(found_file)
   for _, config in ipairs(codemodel_json["configurations"]) do
     if config["name"] == self.build_type then
       return Result:new(Types.SUCCESS, config["targets"], "find it")
@@ -285,9 +285,7 @@ end
 ---@param codemodel_target table
 ---@return table
 function Config:get_code_model_target_info(codemodel_target)
-  return vim.json.decode(
-    utils.read_file(join(self.reply_directory, codemodel_target["jsonFile"]))
-  )
+  return utils.read_json(join(self.reply_directory, codemodel_target["jsonFile"]))
 end
 
 ---Check if launch target is built

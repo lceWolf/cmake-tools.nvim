@@ -109,14 +109,29 @@ end
 
 ---@param path string
 ---@return string|nil content
+---@return string|nil err
 function utils.read_file(path)
-  local file = io.open(path, "r")
+  local file, err = io.open(path, "r")
   if not file then
-    return nil
+    return nil, err
   end
   local content = file:read("*a")
   file:close()
   return content
+end
+
+---@param path string
+---@return table
+function utils.read_json(path)
+  local content, err = utils.read_file(path)
+  if not content then
+    error(string.format("cmake-tools: cannot read %s: %s", path, err), 2)
+  end
+  local ok, decoded = pcall(vim.json.decode, content)
+  if not ok then
+    error(string.format("cmake-tools: cannot parse %s: %s", path, decoded), 2)
+  end
+  return decoded
 end
 
 ---Absolute path without trailing separator
