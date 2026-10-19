@@ -444,11 +444,8 @@ function utils.get_nested(tbl, ...)
 end
 
 function utils.split_string_by_delimiter(s, delimiter, item)
-  local answer = {}
   local delimiter1 = delimiter or ";"
-  for x in string.gmatch(s, "(.-)" .. delimiter1) do
-    table.insert(answer, x)
-  end
+  local answer = vim.split(s, delimiter1, { plain = true, trimempty = true })
   if #answer == 0 then
     return nil
   elseif item then -- does the user want an entry verses a parsed table?

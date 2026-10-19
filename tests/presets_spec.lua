@@ -849,6 +849,16 @@ describe("ConfigurePreset", function()
       assert.is_nil(preset:get_build_configuration_types())
     end)
 
+    it("splits the list for Ninja Multi-Config", function()
+      local preset = new_preset({
+        name = "p",
+        generator = "Ninja Multi-Config",
+        cacheVariables = { CMAKE_CONFIGURATION_TYPES = "Debug;Release;RelWithDebInfo" },
+      })
+
+      assert.same({ "Debug", "Release", "RelWithDebInfo" }, preset:get_build_configuration_types())
+    end)
+
     it("returns nil when CMAKE_CONFIGURATION_TYPES is missing", function()
       local preset = new_preset({ name = "p", generator = "Ninja Multi-Config" })
 
