@@ -1,4 +1,5 @@
 local log = require("cmake-tools.log")
+local osys = require("cmake-tools.osys")
 
 ---@alias quickfix_show '"always"'|'"only_on_error"'
 ---@alias quickfix_position '"belowright"'|'"bottom"'|'"top"'
@@ -70,13 +71,39 @@ end
 -- how long the pipes may stay silent after the process exited before they are closed
 local DRAIN_TIMEOUT_MS = 100
 
+---Wrap the command so that `env_script` runs in a shell right before it
+---@param cmd string
+---@param args string[]
+---@param env_script string?
+---@return string spawn_cmd, string[] spawn_args, boolean verbatim
+local function with_env_script(cmd, args, env_script)
+  if env_script == nil or env_script:match("^%s*$") then
+    return cmd, args, false
+  end
+  local script = env_script:gsub("%s*$", "")
+
+  if osys.iswin32 then
+    local parts = { script, "&&", '"' .. cmd .. '"' }
+    for _, arg in ipairs(args) do
+      table.insert(parts, '"' .. arg .. '"')
+    end
+    -- cmd.exe strips the outer quotes with /s, so the inner ones survive
+    return "cmd.exe", { "/d", "/s", "/c", '"' .. table.concat(parts, " ") .. '"' }, true
+  end
+
+  -- the braces keep a trailing `;` or `&` of the script from changing the meaning of `&&`
+  local shell_args = { "-c", "{ " .. script .. "\n} && exec \"$@\"", "sh", cmd }
+  vim.list_extend(shell_args, args)
+  return "sh", shell_args, false
+end
+
 function _quickfix.run(cmd, env_script, env, args, cwd, opts, on_exit, on_output)
   vim.fn.setqflist({}, " ", { title = cmd .. " " .. table.concat(args, " ") })
   if opts.show == "always" then
     _quickfix.show(opts)
   end
 
-  -- NOTE: env_script is not used by quickfix.run()
+  local spawn_cmd, spawn_args, verbatim = with_env_script(cmd, args, env_script)
 
   -- uv.spawn replaces the environment, so merge `env` on top of the parent one
   local job_env = vim.fn.environ()
@@ -145,10 +172,11 @@ function _quickfix.run(cmd, env_script, env, args, cwd, opts, on_exit, on_output
     end
   end
 
-  local handle, pid_or_err = vim.uv.spawn(cmd, {
-    args = args,
+  local handle, pid_or_err = vim.uv.spawn(spawn_cmd, {
+    args = spawn_args,
     cwd = cwd,
     env = env_list,
+    verbatim = verbatim,
     stdio = { nil, stdout, stderr },
   }, function(code, signal)
     job.exited = true

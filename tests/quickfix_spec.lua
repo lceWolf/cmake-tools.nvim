@@ -73,6 +73,41 @@ describe("quickfix runner", function()
     vim.fn.delete(tmp, "rf")
   end)
 
+  it("runs the environment setup script before the command", function()
+    local code
+    quickfix.run(
+      "sh",
+      "export FROM_SCRIPT=sourced;",
+      {},
+      { "-c", 'echo "$FROM_SCRIPT" "$0"', "a b" },
+      vim.uv.cwd(),
+      opts,
+      function(c)
+        code = c
+      end,
+      function() end
+    )
+    vim.wait(5000, function()
+      return code ~= nil
+    end, 10)
+
+    assert.equals(0, code)
+    assert.is_true(vim.tbl_contains(qf_lines(), "sourced a b"))
+  end)
+
+  it("does not run the command when the environment setup script fails", function()
+    local code
+    quickfix.run("echo", "false", {}, { "never" }, vim.uv.cwd(), opts, function(c)
+      code = c
+    end, function() end)
+    vim.wait(5000, function()
+      return code ~= nil
+    end, 10)
+
+    assert.is_not.equals(0, code)
+    assert.is_false(vim.tbl_contains(qf_lines(), "never"))
+  end)
+
   it("reports an active job until it is stopped", function()
     local code
     quickfix.run("sleep", "", {}, { "10" }, vim.uv.cwd(), opts, function(c)
