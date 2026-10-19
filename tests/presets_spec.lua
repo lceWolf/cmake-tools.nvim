@@ -695,6 +695,12 @@ describe("ConfigurePreset", function()
       assert.equals("$x", expand("${dollar}x"))
     end)
 
+    it("expands ${pathListSep} to the platform separator", function()
+      local expected = vim.fn.has("win32") == 1 and ";" or ":"
+
+      assert.equals("a" .. expected .. "b", expand("a${pathListSep}b"))
+    end)
+
     it("expands $env{} in cacheVariables from the preset environment", function()
       assert.equals("/r/x", expand("$env{ROOT}/x", { environment = { ROOT = "/r" } }))
     end)

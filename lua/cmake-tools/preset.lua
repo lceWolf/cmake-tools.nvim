@@ -38,7 +38,7 @@ local function expandMacro(self, str)
     return self.cwd
   end)
   str = str:gsub("${dollar}", "$")
-  str = str:gsub("${pathListSep}", "/")
+  str = str:gsub("${pathListSep}", osys.iswin32 and ";" or ":")
 
   return str
 end
