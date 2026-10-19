@@ -23,13 +23,18 @@ jobs:
           version: v0.17.1 # NOTE: we recommend pinning to a specific version in case of formatting changes
           args: --check -f ./stylua.toml .
   tests:
+    name: Tests (nvim ${{ matrix.nvim }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        nvim: [v0.10.0, stable]
     steps:
       - uses: actions/checkout@v4
       - uses: rhysd/action-setup-vim@v1
         with:
           neovim: true
-          version: stable
+          version: ${{ matrix.nvim }}
       - uses: leafo/gh-actions-lua@v10
         with:
           luaVersion: "luajit-openresty"
