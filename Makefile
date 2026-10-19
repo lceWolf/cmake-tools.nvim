@@ -4,7 +4,7 @@ ROCKS := .rocks
 LUAROCKS := luarocks --tree $(ROCKS) --lua-version 5.1
 
 test: deps
-	eval "$$($(LUAROCKS) path)" && PATH="$(ROCKS)/bin:$$PATH" busted $(BUSTED_ARGS)
+	eval "$$($(LUAROCKS) path)" && PATH="$(ROCKS)/bin:$$PATH" busted $(BUSTED_ARGS) </dev/null
 
 deps: $(ROCKS)/bin/busted $(ROCKS)/bin/nlua
 
