@@ -36,14 +36,15 @@ function _quickfix.close(opts)
 end
 
 local function line_reader(emit)
-  local pending = ""
+  -- chunks of the unfinished last line, only joined once its newline arrives
+  local pending = {}
   local function emit_line(line)
     emit((line:gsub("\r$", "")))
   end
   local function flush()
-    if pending ~= "" then
-      local line = pending
-      pending = ""
+    if #pending > 0 then
+      local line = table.concat(pending)
+      pending = {}
       emit_line(line)
     end
   end
@@ -52,15 +53,20 @@ local function line_reader(emit)
       flush()
       return
     end
-    pending = pending .. data
+    local start = 1
     while true do
-      local idx = pending:find("\n", 1, true)
+      local idx = data:find("\n", start, true)
       if not idx then
         break
       end
-      local line = pending:sub(1, idx - 1)
-      pending = pending:sub(idx + 1)
+      table.insert(pending, data:sub(start, idx - 1))
+      local line = table.concat(pending)
+      pending = {}
       emit_line(line)
+      start = idx + 1
+    end
+    if start <= #data then
+      table.insert(pending, data:sub(start))
     end
   end
   return handler, flush
