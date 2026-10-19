@@ -472,6 +472,12 @@ describe("ConfigurePreset", function()
       assert.is_false(new_preset(child, parents).disabled)
     end)
 
+    it("raises an error for a const condition with a non-boolean value", function()
+      assert.has_error(function()
+        new_preset({ name = "p", condition = { type = "const", value = "yes" } })
+      end)
+    end)
+
     it("raises an error for a condition without a type", function()
       assert.has_error(function()
         new_preset({ name = "p", condition = { value = true } })

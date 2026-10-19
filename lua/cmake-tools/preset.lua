@@ -59,7 +59,7 @@ end
 local function resolveConditions(self)
   local function evalCondition(preset)
     local function eval(cond)
-      if not type(cond) == "table" then
+      if type(cond) ~= "table" then
         error("condition field has to be a JSON object")
       end
 
@@ -100,7 +100,7 @@ local function resolveConditions(self)
       end
 
       if ctype == "const" then
-        if not type(cond.value) == "bool" then
+        if type(cond.value) ~= "boolean" then
           error("condition type 'const' requires a boolean field 'value'")
         end
         return cond.value
@@ -133,7 +133,7 @@ local function resolveConditions(self)
         end
         return true
       elseif ctype == "not" then
-        if not type(cond.condition) == "table" then
+        if type(cond.condition) ~= "table" then
           error("condition field 'condition' must be of type object")
         end
         return not eval(cond.condition)
