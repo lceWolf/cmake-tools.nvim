@@ -298,16 +298,37 @@ function utils.has_active_job(runner_data, executor_data)
   -- or utils.get_runner(runner_data.name).has_active_job(runner_data.opts)
 end
 
+-- build progress of make, e.g. [ 12%], or ninja, e.g. [3/10]
+local function is_progress_line(line)
+  return line:match("^%[%s*%d+%%%]") ~= nil or line:match("^%[%d+/%d+%]") ~= nil
+end
+
+-- the headline of a compiler or cmake diagnostic, not the source excerpt or notes that follow it,
+-- e.g. "a.cpp:1:17: error: ...", "a.cpp(1): warning C4101: ..." or "CMake Error at ..."
+local function is_diagnostic_line(line)
+  return line:find("error:") ~= nil
+    or line:find("warning:") ~= nil
+    or line:find(": error %u+%d+") ~= nil
+    or line:find(": warning %u+%d+") ~= nil
+    or line:find("^CMake Error") ~= nil
+    or line:find("^CMake Warning") ~= nil
+end
+
 local notify_update_line = function(ntfy)
   return function(out, err)
     if not ntfy.enabled then
       return
     end
-    local line = err and err or out
-    if line ~= nil then
-      if line and vim.fn.match(line, "^%[%s*(%d+)%s*%%%]") then -- only show lines containing build progress e.g [ 12%]
-        ntfy:notify(line, err and "warn" or "info")
+    local data = err or out
+    -- some backends (e.g. toggleterm) pass a list of lines instead of a single line
+    local lines = type(data) == "table" and data or { data }
+    for _, line in ipairs(lines) do
+      -- check both streams, ninja forwards the compiler output to stdout
+      local level = type(line) == "string"
+        and (is_diagnostic_line(line) and "warn" or is_progress_line(line) and "info")
+      if level then
         ntfy:startSpinner()
+        ntfy:notify(line, level)
       end
     end
   end
