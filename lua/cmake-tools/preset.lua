@@ -1,4 +1,3 @@
-local Path = require("plenary.path")
 local osys = require("cmake-tools.osys")
 local utils = require("cmake-tools.utils")
 
@@ -23,17 +22,20 @@ local function expandMacro(self, str)
   end)
 
   -- macro expansion
-  local source_path = Path:new(self.cwd)
   local source_relative = vim.fn.fnamemodify(self.cwd, ":t")
   str = str:gsub("${sourceDir}", ".") -- sourceDir is relative to the CMakePresests.json file, and should be relative
-  str = str:gsub("${sourceParentDir}", source_path:parent().filename)
+  str = str:gsub("${sourceParentDir}", function()
+    return vim.fs.dirname(self.cwd)
+  end)
   str = str:gsub("${sourceDirName}", source_relative)
   str = str:gsub("${presetName}", self.name)
   if self.generator then
     str = str:gsub("${generator}", self.generator)
   end
   str = str:gsub("${hostSystemName}", osys.iswin32 and "Windows" or vim.loop.os_uname().sysname)
-  str = str:gsub("${fileDir}", source_path.filename)
+  str = str:gsub("${fileDir}", function()
+    return self.cwd
+  end)
   str = str:gsub("${dollar}", "$")
   str = str:gsub("${pathListSep}", "/")
 

@@ -14,7 +14,6 @@ local environment = require("cmake-tools.environment")
 local file_picker = require("cmake-tools.file_picker")
 local scratch = require("cmake-tools.scratch")
 local Result = require("cmake-tools.result")
-local Path = require("plenary.path")
 
 local ctest = require("cmake-tools.test.ctest")
 
@@ -30,6 +29,11 @@ local cmake = {}
 --- Setup cmake-tools
 ---@param values table
 function cmake.setup(values)
+  if vim.fn.has("nvim-0.10") ~= 1 then
+    log.error("cmake-tools.nvim requires Neovim >= 0.10")
+    return
+  end
+
   const.setup(values)
   _session.setup(const)
 
@@ -103,7 +107,7 @@ function cmake.generate(opt, callback)
       end
       -- Clear CMakeCache.txt
       if config:has_build_directory() then
-        utils.rmfile(config.build_directory / "CMakeCache.txt")
+        utils.rmfile(vim.fs.joinpath(config:build_directory_path(), "CMakeCache.txt"))
       end
       cmake.generate({ fargs = fargs }, callback)
     end)
@@ -289,15 +293,15 @@ function cmake.clean(callback)
     return
   end
 
-  local path = Path:new(config:build_directory_path())
-  if not (path / "CMakeCache.txt"):exists() then
+  local path = config:build_directory_path()
+  if not utils.file_exists(vim.fs.joinpath(path, "CMakeCache.txt")) then
     -- no need to clean up as we do not have a cache
     return
   end
 
   local args = {
     "--build",
-    path.filename,
+    path,
     "--target",
     "clean",
   }
@@ -1494,7 +1498,7 @@ function cmake.get_test_preset()
   return config.test_preset
 end
 
----@return Path?
+---@return string?
 function cmake.get_build_directory()
   return config.build_directory
 end
@@ -1621,13 +1625,10 @@ function cmake.select_cwd(cwd_path)
         if not input then
           return
         end
-        --local new_path = Path:new(input)
-        --if new_path:is_dir() then
         config.cwd = vim.fn.resolve(input)
         cmake.register_autocmd()
         cmake.register_autocmd_provided_by_users()
         cmake.register_scratch_buffer(config.executor.name, config.runner.name)
-        --	end
         cmake.generate({ bang = false, fargs = {} }, nil)
       end)
     )
@@ -1653,10 +1654,7 @@ function cmake.select_build_dir(cwd_path)
         if not input then
           return
         end
-        --local new_path = Path:new(input)
-        --if new_path:is_dir() then
         config:update_build_dir(vim.fn.resolve(input), vim.fn.resolve(input))
-        --	end
         cmake.generate({ bang = false, fargs = {} }, nil)
       end)
     )

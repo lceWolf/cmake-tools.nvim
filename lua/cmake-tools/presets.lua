@@ -1,4 +1,3 @@
-local Path = require("plenary.path")
 local Preset = require("cmake-tools.preset")
 local BuildPreset = require("cmake-tools.build_preset")
 local TestPreset = require("cmake-tools.test_preset")
@@ -32,8 +31,8 @@ local function decode(file, visited)
     return {}
   end
 
-  local file_path = Path:new(abs_file_path)
-  if not file_path:exists() or file_path:is_dir() then
+  local stat = vim.uv.fs_stat(abs_file_path)
+  if not stat or stat.type == "directory" then
     return {} -- Do not error on missing include
   end
 
@@ -53,8 +52,8 @@ local function decode(file, visited)
   if #includes == 0 and is_user_preset then
     local preset_pascal_case = "CMakePresets.json"
     local preset_kebab_case = "cmake-presets.json"
-    local preset_pascal_case_path = tostring(Path:new(parentDir) / preset_pascal_case)
-    local preset_kebab_case_path = tostring(Path:new(parentDir) / preset_kebab_case)
+    local preset_pascal_case_path = vim.fs.joinpath(parentDir, preset_pascal_case)
+    local preset_kebab_case_path = vim.fs.joinpath(parentDir, preset_kebab_case)
 
     if vim.fn.filereadable(preset_pascal_case_path) > 0 then
       includes[#includes + 1] = preset_pascal_case
@@ -73,11 +72,10 @@ local function decode(file, visited)
     end)
 
     local included_file_str
-    local f_path = Path:new(include_path)
-    if f_path:is_absolute() then
+    if vim.fn.isabsolutepath(include_path) == 1 then
       included_file_str = include_path
     else
-      included_file_str = tostring(Path:new(parentDir) / include_path)
+      included_file_str = vim.fs.joinpath(parentDir, include_path)
     end
 
     local included_data = decode(included_file_str, visited)
@@ -276,7 +274,7 @@ function Presets.find_preset_files(cwd)
       or f == "cmake-presets.json"
       or f == "cmake-user-presets.json"
     then -- if a preset file is found
-      table.insert(presetFiles, tostring(Path:new(cwd, f)))
+      table.insert(presetFiles, vim.fs.joinpath(cwd, f))
     end
   end
   table.sort(presetFiles, function(a, b)
