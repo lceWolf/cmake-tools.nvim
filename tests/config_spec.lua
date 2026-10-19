@@ -49,10 +49,19 @@ describe("Config", function()
       assert.equals(abs, config:no_expand_build_directory_path())
     end)
 
-    it("stores the unexpanded build dir as absolute path without trailing separator", function()
-      local stored = config:no_expand_build_directory_path()
-      assert.equals(1, vim.fn.isabsolutepath(stored))
-      assert.truthy(stored:match("build$"))
+    it("stores the unexpanded build dir resolved against cwd", function()
+      assert.equals(build, config:no_expand_build_directory_path())
+    end)
+
+    it("resolves against the project cwd, not the cwd of neovim", function()
+      local other = join(tmp, "other")
+      vim.fn.mkdir(other, "p")
+      config.cwd = other
+
+      config:update_build_dir("out", "out")
+
+      assert.equals(join(other, "out"), config:build_directory_path())
+      assert.equals(join(other, "out"), config:no_expand_build_directory_path())
     end)
   end)
 
@@ -142,6 +151,28 @@ describe("Config", function()
         assert.equals(join(build, "bin", "app"), result.data)
         assert.equals("string", type(result.data))
       end)
+    end)
+
+    it("lists launch targets with absolute artifact and source paths", function()
+      config.build_type = "Debug"
+      write_json(join(reply, "target-app.json"), {
+        name = "app",
+        type = "EXECUTABLE",
+        nameOnDisk = "app",
+        paths = { build = "." },
+        artifacts = { { path = "bin/app" } },
+        sources = { { path = "src/main.cpp" }, { path = "/abs/generated.cpp" } },
+      })
+
+      local result = config:launch_targets_with_sources()
+
+      assert.equals(Types.SUCCESS, result.code)
+      assert.same({ "app" }, result.data.targets)
+      assert.same({ join(build, "bin", "app") }, result.data.abs_paths)
+      local sources = vim.tbl_map(function(source)
+        return source.path
+      end, result.data.sources)
+      assert.same({ join(tmp, "src", "main.cpp"), "/abs/generated.cpp" }, sources)
     end)
 
     it("get_build_target returns the artifact path", function()

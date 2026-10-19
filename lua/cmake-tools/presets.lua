@@ -1,4 +1,5 @@
 local Preset = require("cmake-tools.preset")
+local utils = require("cmake-tools.utils")
 local BuildPreset = require("cmake-tools.build_preset")
 local TestPreset = require("cmake-tools.test_preset")
 
@@ -25,7 +26,7 @@ local KNOWN_PRESET_KEYS = {
 -- CMakeUserPresets.json implicitly includes CMakePresets.json if it exists
 local function decode(file, visited)
   visited = visited or {}
-  local abs_file_path = vim.fn.fnamemodify(file, ":p")
+  local abs_file_path = utils.abspath(file)
 
   if visited[abs_file_path] then
     return {}
@@ -52,8 +53,8 @@ local function decode(file, visited)
   if #includes == 0 and is_user_preset then
     local preset_pascal_case = "CMakePresets.json"
     local preset_kebab_case = "cmake-presets.json"
-    local preset_pascal_case_path = vim.fs.joinpath(parentDir, preset_pascal_case)
-    local preset_kebab_case_path = vim.fs.joinpath(parentDir, preset_kebab_case)
+    local preset_pascal_case_path = utils.join(parentDir, preset_pascal_case)
+    local preset_kebab_case_path = utils.join(parentDir, preset_kebab_case)
 
     if vim.fn.filereadable(preset_pascal_case_path) > 0 then
       includes[#includes + 1] = preset_pascal_case
@@ -71,12 +72,7 @@ local function decode(file, visited)
       return vim.env[envVar] or ""
     end)
 
-    local included_file_str
-    if vim.fn.isabsolutepath(include_path) == 1 then
-      included_file_str = include_path
-    else
-      included_file_str = vim.fs.joinpath(parentDir, include_path)
-    end
+    local included_file_str = utils.abspath(include_path, parentDir)
 
     local included_data = decode(included_file_str, visited)
     for key, _ in pairs(included_data) do
@@ -274,7 +270,7 @@ function Presets.find_preset_files(cwd)
       or f == "cmake-presets.json"
       or f == "cmake-user-presets.json"
     then -- if a preset file is found
-      table.insert(presetFiles, vim.fs.joinpath(cwd, f))
+      table.insert(presetFiles, utils.join(cwd, f))
     end
   end
   table.sort(presetFiles, function(a, b)

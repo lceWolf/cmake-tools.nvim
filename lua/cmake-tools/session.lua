@@ -5,16 +5,7 @@ local log = require("cmake-tools.log")
 local default_config
 local migrated = false
 
----@param path string
----@return string
-local function normalize(path)
-  if osys.iswin32 then
-    return (path:gsub("/", "\\"))
-  end
-  return path
-end
-
-local session_dir = normalize(vim.fn.stdpath("data") .. "/cmake_tools_nvim/")
+local session_dir = utils.join(vim.fn.stdpath("data"), "cmake_tools_nvim")
 
 local session = {}
 
@@ -49,9 +40,9 @@ local function migrate_legacy_cache()
   -- TODO: this can be dropped after a grace period, maybe
   local old_dir
   if osys.iswin32 then
-    old_dir = normalize(vim.fn.expand("~") .. "/AppData/Local/cmake_tools_nvim/")
+    old_dir = utils.join("~", "AppData", "Local", "cmake_tools_nvim")
   else
-    old_dir = normalize(vim.fn.expand("~") .. "/.cache/cmake_tools_nvim/")
+    old_dir = utils.join("~", ".cache", "cmake_tools_nvim")
   end
 
   if not utils.file_exists(old_dir) then
@@ -63,10 +54,9 @@ local function migrate_legacy_cache()
   end
 
   local failed = 0
-  local files = vim.fn.glob(old_dir .. "*", false, true)
+  local files = vim.fn.glob(utils.join(old_dir, "*"), false, true)
   for _, file in ipairs(files) do
-    local filename = vim.fn.fnamemodify(normalize(file), ":t")
-    local new_path = session_dir .. filename
+    local new_path = utils.join(session_dir, vim.fn.fnamemodify(file, ":t"))
     -- a file already present in the new location wins, the legacy one is dropped
     if utils.file_exists(new_path) or move_file(file, new_path) then
       vim.fn.delete(file)
@@ -90,7 +80,7 @@ local function get_current_path(cwd)
   local clean_path = cwd:gsub("/", "")
   clean_path = clean_path:gsub("\\", "")
   clean_path = clean_path:gsub(":", "")
-  return session_dir .. clean_path .. ".lua"
+  return utils.join(session_dir, clean_path .. ".lua")
 end
 
 local function init_cache()
