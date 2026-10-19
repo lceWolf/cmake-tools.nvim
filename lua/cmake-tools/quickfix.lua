@@ -1,4 +1,5 @@
 local log = require("cmake-tools.log")
+local osys = require("cmake-tools.osys")
 
 ---@alias quickfix_show '"always"'|'"only_on_error"'
 ---@alias quickfix_position '"belowright"'|'"bottom"'|'"top"'
@@ -75,13 +76,73 @@ end
 -- how long the pipes may stay silent after the process exited before they are closed
 local DRAIN_TIMEOUT_MS = 100
 
+-- Quote an argument the way the C runtime splits a command line into argv
+local function win_quote_arg(arg)
+  if arg ~= "" and not arg:find('[%s"]') then
+    return arg
+  end
+  -- backslashes are only special in front of a quote, including the closing one
+  local quoted = arg:gsub('(\\*)"', function(backslashes)
+    return backslashes .. backslashes .. '\\"'
+  end)
+  quoted = quoted:gsub("(\\*)$", function(backslashes)
+    return backslashes .. backslashes
+  end)
+  return '"' .. quoted .. '"'
+end
+
+-- Escape the metacharacters of cmd.exe, including quotes, so it never enters a quoted
+-- section, passes everything on literally and does not expand %VAR%
+local function cmd_escape(str)
+  return (str:gsub('[()%%!^"<>&|]', "^%0"))
+end
+
+local POSIX_SHELLS = { sh = true, bash = true, dash = true, ksh = true, zsh = true }
+
+-- Run the script in the user's shell like the terminal backends do, unless it is not a POSIX
+-- shell (e.g. fish), which could not run the wrapper
+local function posix_shell()
+  if POSIX_SHELLS[vim.fs.basename(vim.o.shell)] then
+    return vim.o.shell
+  end
+  return "sh"
+end
+
+---Wrap the command so that 'env_script' runs in a shell right before it
+---@param cmd string
+---@param args string[]
+---@param env_script string?
+---@return string spawn_cmd, string[] spawn_args, boolean verbatim
+local function with_env_script(cmd, args, env_script)
+  if env_script == nil or env_script:match("^%s*$") then
+    return cmd, args, false
+  end
+  local script = env_script:gsub("%s*$", "")
+
+  if osys.iswin32 then
+    local parts = { script, "&&", cmd_escape(win_quote_arg(cmd)) }
+    for _, arg in ipairs(args) do
+      table.insert(parts, cmd_escape(win_quote_arg(arg)))
+    end
+    -- /s makes cmd.exe strip exactly the outer quotes and keep the rest of the line as is
+    return "cmd.exe", { "/d", "/s", "/c", '"' .. table.concat(parts, " ") .. '"' }, true
+  end
+
+  -- the braces keep a trailing ';' or '&' of the script from changing the meaning of '&&'
+  local shell = posix_shell()
+  local shell_args = { "-c", "{ " .. script .. '\n} && exec "$@"', "sh", cmd }
+  vim.list_extend(shell_args, args)
+  return shell, shell_args, false
+end
+_quickfix._with_env_script = with_env_script
+
 function _quickfix.run(cmd, env_script, env, args, cwd, opts, on_exit, on_output)
   vim.fn.setqflist({}, " ", { title = cmd .. " " .. table.concat(args, " ") })
   if opts.show == "always" then
     _quickfix.show(opts)
   end
 
-  -- NOTE: env_script is not used by quickfix.run()
+  local spawn_cmd, spawn_args, verbatim = with_env_script(cmd, args, env_script)
 
   -- uv.spawn replaces the environment, so merge 'env' on top of the parent one.
   -- 'env' may also hold "KEY=VALUE" list entries (e.g. from kits), named keys take precedence.
@@ -159,10 +220,11 @@ function _quickfix.run(cmd, env_script, env, args, cwd, opts, on_exit, on_output
     end
   end
 
-  local handle, pid_or_err = vim.uv.spawn(cmd, {
-    args = args,
+  local handle, pid_or_err = vim.uv.spawn(spawn_cmd, {
+    args = spawn_args,
     cwd = cwd,
     env = env_list,
+    verbatim = verbatim,
     stdio = { nil, stdout, stderr },
   }, function(code, signal)
     job.exited = true

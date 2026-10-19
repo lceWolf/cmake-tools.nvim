@@ -38,7 +38,7 @@ variants, to control the window of the current backend.
 
 | | needs | terminal for the process | reports progress | exit code | `cmake_environment_setup_script` |
 | --- | --- | --- | --- | --- | --- |
-| `quickfix` | - | no | yes | yes | no |
+| `quickfix` | - | no | yes | yes | yes |
 | `terminal` | - | yes | no | yes | yes |
 | `toggleterm` | [toggleterm.nvim](https://github.com/akinsho/toggleterm.nvim) | yes | yes | yes | yes |
 | `overseer` | [overseer.nvim](https://github.com/stevearc/overseer.nvim) | depends on the strategy | yes | yes | no |
@@ -50,8 +50,11 @@ variants, to control the window of the current backend.
   the `[ 42%]` progress notifications while a build runs.
 - *exit code*: vimux cannot observe the process and always reports success. The `terminal`
   backend appends a snippet that writes the real exit code to a temporary file.
-- *environment setup script*: quickfix runs the command without a shell and cannot source
-  it, for overseer it is disabled, see
+- *environment setup script*: quickfix runs it right before the command and skips the
+  command if the script fails. It runs in your `'shell'` when that is a POSIX shell (`sh`,
+  `bash`, `dash`, `ksh` or `zsh`) and in `sh` otherwise. On Windows it always runs in
+  `cmd.exe`, so it has to use cmd syntax, e.g. `call "C:\...\vcvars64.bat"`. For
+  overseer it is disabled, see
   [#158](https://github.com/Civitasv/cmake-tools.nvim/issues/158) and
   [#159](https://github.com/Civitasv/cmake-tools.nvim/issues/159).
 

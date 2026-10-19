@@ -101,6 +101,124 @@ describe("quickfix runner", function()
     assert.same({ "from_list from_key" }, result.outputs)
   end)
 
+  it("runs the environment setup script before the command", function()
+    local code
+    quickfix.run(
+      "sh",
+      "export FROM_SCRIPT=sourced;",
+      {},
+      { "-c", 'echo "$FROM_SCRIPT" "$0"', "a b" },
+      vim.uv.cwd(),
+      opts,
+      function(c)
+        code = c
+      end,
+      function() end
+    )
+    vim.wait(5000, function()
+      return code ~= nil
+    end, 10)
+
+    assert.equals(0, code)
+    assert.is_true(vim.tbl_contains(qf_lines(), "sourced a b"))
+  end)
+
+  it("does not run the command when the environment setup script fails", function()
+    local code
+    quickfix.run("echo", "false", {}, { "never" }, vim.uv.cwd(), opts, function(c)
+      code = c
+    end, function() end)
+    vim.wait(5000, function()
+      return code ~= nil
+    end, 10)
+
+    assert.is_not.equals(0, code)
+    assert.is_false(vim.tbl_contains(qf_lines(), "never"))
+  end)
+
+  describe("environment setup script wrapper", function()
+    local osys = require("cmake-tools.osys")
+    local saved_shell, saved_iswin32
+
+    before_each(function()
+      saved_shell = vim.o.shell
+      saved_iswin32 = osys.iswin32
+    end)
+
+    after_each(function()
+      vim.o.shell = saved_shell
+      osys.iswin32 = saved_iswin32
+    end)
+
+    it("runs the command directly without a script", function()
+      local cmd, args = quickfix._with_env_script("cmake", { "--build" }, "  ")
+
+      assert.equals("cmake", cmd)
+      assert.same({ "--build" }, args)
+    end)
+
+    it("uses the user's shell when it is a POSIX shell", function()
+      vim.o.shell = "/usr/bin/bash"
+
+      local cmd, args = quickfix._with_env_script("cmake", { "--build" }, "source env.sh")
+
+      assert.equals("/usr/bin/bash", cmd)
+      assert.same({ "-c", '{ source env.sh\n} && exec "$@"', "sh", "cmake", "--build" }, args)
+    end)
+
+    it("runs a bash-only script when the shell is bash", function()
+      local bash = vim.fn.exepath("bash")
+      if bash == "" then
+        pending("bash is not installed")
+        return
+      end
+      vim.o.shell = bash
+      local code
+      quickfix.run(
+        "sh",
+        "[[ 1 == 1 ]] && export FROM_BASH=yes",
+        {},
+        { "-c", 'echo "$FROM_BASH"' },
+        vim.uv.cwd(),
+        opts,
+        function(c)
+          code = c
+        end,
+        function() end
+      )
+      vim.wait(5000, function()
+        return code ~= nil
+      end, 10)
+
+      assert.equals(0, code)
+      assert.is_true(vim.tbl_contains(qf_lines(), "yes"))
+    end)
+
+    it("falls back to sh for other shells", function()
+      vim.o.shell = "/usr/bin/fish"
+
+      assert.equals("sh", (quickfix._with_env_script("cmake", {}, "true")))
+    end)
+
+    it("escapes the arguments for cmd.exe on Windows", function()
+      osys.iswin32 = true
+      local args = { '-DA="x y"', "C:\\dir with space\\", "%PATH%", "a&b" }
+
+      local cmd, cmd_args, verbatim =
+        quickfix._with_env_script("C:\\cmake.exe", args, 'call "vcvars64.bat"')
+
+      assert.equals("cmd.exe", cmd)
+      assert.is_true(verbatim)
+      assert.same({
+        "/d",
+        "/s",
+        "/c",
+        '"call "vcvars64.bat" && C:\\cmake.exe ^"-DA=\\^"x y\\^"^" '
+          .. '^"C:\\dir with space\\\\^" ^%PATH^% a^&b"',
+      }, cmd_args)
+    end)
+  end)
+
   it("reports an active job until it is stopped", function()
     local code
     quickfix.run("sleep", "", {}, { "10" }, vim.uv.cwd(), opts, function(c)
