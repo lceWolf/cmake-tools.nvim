@@ -53,15 +53,16 @@ local function line_reader(emit)
       return
     end
     pending = pending .. data
+    local start = 1
     while true do
-      local idx = pending:find("\n", 1, true)
+      local idx = pending:find("\n", start, true)
       if not idx then
         break
       end
-      local line = pending:sub(1, idx - 1)
-      pending = pending:sub(idx + 1)
-      emit_line(line)
+      emit_line(pending:sub(start, idx - 1))
+      start = idx + 1
     end
+    pending = pending:sub(start)
   end
   return handler, flush
 end
