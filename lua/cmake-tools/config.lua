@@ -1,11 +1,29 @@
-local Path = require("plenary.path")
-local scandir = require("plenary.scandir")
 local Result = require("cmake-tools.result")
--- local utils = require("cmake-tools.utils") -- Fails lua check. Uncomment this for testing
+local utils = require("cmake-tools.utils")
 local Types = require("cmake-tools.types")
 local variants = require("cmake-tools.variants")
 local Presets = require("cmake-tools.presets")
 local kits = require("cmake-tools.kits")
+
+---Join path segments; on Windows the result only contains backslashes
+---@param ... string
+---@return string
+local function join(...)
+  local path = vim.fs.joinpath(...)
+  if require("cmake-tools.osys").iswin32 then
+    path = path:gsub("/", "\\")
+  end
+  return path
+end
+
+---@param path string
+---@return boolean
+local function is_absolute(path)
+  if vim.fn.isabsolutepath(path) == 1 then
+    return true
+  end
+  return require("cmake-tools.osys").iswin32 and path:match("^%a:[\\/]") ~= nil
+end
 
 ---@class Config.BaseSettings
 ---@field env table
@@ -18,9 +36,9 @@ local kits = require("cmake-tools.kits")
 ---@field ctest_show_labels boolean
 
 ---@class Config
----@field build_directory Path?
----@field query_directory Path?
----@field reply_directory Path?
+---@field build_directory string?
+---@field query_directory string?
+---@field reply_directory string?
 ---@field build_type string?
 ---@field variant table?
 ---@field build_target string|string[]|nil
@@ -76,12 +94,12 @@ end
 
 ---@return string
 function Config:build_directory_path()
-  return self.build_directory.filename
+  return self.build_directory
 end
 
 ---@return boolean
 function Config:has_build_directory()
-  return self.build_directory and self.build_directory:exists()
+  return self.build_directory ~= nil and utils.is_dir(self.build_directory)
 end
 
 ---The reason for storing no expand build directory is to make cwd selecting easier
@@ -108,22 +126,20 @@ function Config:update_build_dir(build_dir, no_expand_build_dir)
     )
   end
 
+  if not is_absolute(build_dir) then
+    build_dir = join(self.cwd, build_dir)
+  end
   if require("cmake-tools.osys").iswin32 then
     build_dir = build_dir:gsub("/", "\\")
   end
+  self.build_directory = build_dir
+  self.query_directory = join(build_dir, ".cmake", "api", "v1", "query")
+  self.reply_directory = join(build_dir, ".cmake", "api", "v1", "reply")
 
-  local build_path = Path:new(build_dir)
-  if build_path:is_absolute() then
-    self.build_directory = Path:new(build_dir)
-    self.query_directory = Path:new(build_dir, ".cmake", "api", "v1", "query")
-    self.reply_directory = Path:new(build_dir, ".cmake", "api", "v1", "reply")
-  else
-    self.build_directory = Path:new(self.cwd, build_dir)
-    self.query_directory = Path:new(self.cwd, build_dir, ".cmake", "api", "v1", "query")
-    self.reply_directory = Path:new(self.cwd, build_dir, ".cmake", "api", "v1", "reply")
+  self.base_settings.build_dir = utils.abspath(no_expand_build_dir)
+  if require("cmake-tools.osys").iswin32 then
+    self.base_settings.build_dir = self.base_settings.build_dir:gsub("/", "\\")
   end
-
-  self.base_settings.build_dir = Path:new(no_expand_build_dir):absolute()
 end
 
 ---Prepare build directory with macro expansion
@@ -182,9 +198,7 @@ end
 
 ---@return cmake.Result
 function Config:generate_build_directory()
-  local build_directory = Path:new(self.build_directory)
-
-  if not build_directory:mkdir({ parents = true }) then
+  if not utils.mkdir(self.build_directory) then
     return Result:new(Types.CANNOT_CREATE_DIRECTORY, false, "cannot create directory")
   end
   return self:generate_query_files()
@@ -192,29 +206,29 @@ end
 
 ---@return cmake.Result
 function Config:generate_query_files()
-  local query_directory = Path:new(self.query_directory)
-  if not query_directory:mkdir({ parents = true }) then
+  local query_directory = self.query_directory
+  if not utils.mkdir(query_directory) then
     return Result:new(Types.CANNOT_CREATE_DIRECTORY, false, "cannot create directory")
   end
 
-  local codemodel_file = query_directory / "codemodel-v2"
-  if not codemodel_file:is_file() then
-    if not codemodel_file:touch() then
+  local codemodel_file = join(query_directory, "codemodel-v2")
+  if not utils.is_file(codemodel_file) then
+    if not utils.touch(codemodel_file) then
       return Result:new(
         Types.CANNOT_CREATE_CODEMODEL_QUERY_FILE,
         nil,
-        "Unable to create file " .. codemodel_file.filename
+        "Unable to create file " .. codemodel_file
       )
     end
   end
 
-  local cmakeFiles_file = query_directory / "cmakeFiles-v1"
-  if not cmakeFiles_file:is_file() then
-    if not cmakeFiles_file:touch() then
+  local cmakeFiles_file = join(query_directory, "cmakeFiles-v1")
+  if not utils.is_file(cmakeFiles_file) then
+    if not utils.touch(cmakeFiles_file) then
       return Result:new(
         Types.CANNOT_CREATE_CODEMODEL_QUERY_FILE,
         nil,
-        "Unable to create file " .. cmakeFiles_file.filename
+        "Unable to create file " .. cmakeFiles_file
       )
     end
   end
@@ -222,37 +236,44 @@ function Config:generate_query_files()
   return Result:new(Types.SUCCESS, true, "yeah, that could be")
 end
 
+---@param dir string
+---@param prefix string
+---@return string?
+local function find_reply_file(dir, prefix)
+  for name, type in vim.fs.dir(dir) do
+    if type == "file" and vim.startswith(name, prefix) then
+      return join(dir, name)
+    end
+  end
+end
+
 ---@return cmake.Result
 function Config:get_cmake_files()
   -- if reply_directory exists
-  local reply_directory = Path:new(self.reply_directory)
-  if not reply_directory:exists() then
+  if not utils.is_dir(self.reply_directory) then
     return Result:new(Types.NOT_CONFIGURED, nil, "Configure fail")
   end
 
-  local found_files = scandir.scan_dir(reply_directory.filename, { search_pattern = "cmakeFiles*" })
-  if #found_files == 0 then
+  local found_file = find_reply_file(self.reply_directory, "cmakeFiles")
+  if not found_file then
     return Result:new(Types.CANNOT_FIND_CODEMODEL_FILE, nil, "Unable to find codemodel file")
   end
-  local codemodel = Path:new(found_files[1])
-  local codemodel_json = vim.json.decode(codemodel:read())
+  local codemodel_json = vim.json.decode(utils.read_file(found_file))
   return Result:new(Types.SUCCESS, codemodel_json["inputs"], "find it")
 end
 
 ---@return cmake.Result
 function Config:get_codemodel_targets()
   -- if reply_directory exists
-  local reply_directory = Path:new(self.reply_directory)
-  if not reply_directory:exists() then
+  if not utils.is_dir(self.reply_directory) then
     return Result:new(Types.NOT_CONFIGURED, nil, "Configure fail")
   end
 
-  local found_files = scandir.scan_dir(reply_directory.filename, { search_pattern = "codemodel*" })
-  if #found_files == 0 then
+  local found_file = find_reply_file(self.reply_directory, "codemodel")
+  if not found_file then
     return Result:new(Types.CANNOT_FIND_CODEMODEL_FILE, nil, "Unable to find codemodel file")
   end
-  local codemodel = Path:new(found_files[1])
-  local codemodel_json = vim.json.decode(codemodel:read())
+  local codemodel_json = vim.json.decode(utils.read_file(found_file))
   for _, config in ipairs(codemodel_json["configurations"]) do
     if config["name"] == self.build_type then
       return Result:new(Types.SUCCESS, config["targets"], "find it")
@@ -264,16 +285,16 @@ end
 ---@param codemodel_target table
 ---@return table
 function Config:get_code_model_target_info(codemodel_target)
-  local reply_directory = Path:new(self.reply_directory)
-  return vim.json.decode((reply_directory / codemodel_target["jsonFile"]):read())
+  return vim.json.decode(
+    utils.read_file(join(self.reply_directory, codemodel_target["jsonFile"]))
+  )
 end
 
 ---Check if launch target is built
 ---@return cmake.Result
 function Config:check_launch_target()
   -- 1. not configured
-  local build_directory = Path:new(self.build_directory)
-  if not build_directory:exists() then
+  if not utils.is_dir(self.build_directory) then
     return Result:new(Types.NOT_CONFIGURED, nil, "You need to configure it first")
   end
 
@@ -314,23 +335,21 @@ function Config:get_launch_target_from_info(target_info)
   if require("cmake-tools.osys").iswin32 then
     target_path = target_path:gsub("/", "\\")
   end
-  target_path = Path:new(target_path)
-  if not target_path:is_absolute() then
+  if not is_absolute(target_path) then
     -- then it is a relative path, based on build directory
-    local build_directory = Path:new(self.build_directory)
-    target_path = build_directory / target_path
+    target_path = join(self.build_directory, target_path)
   end
   -- else it is an absolute path
 
-  if not target_path:is_file() then
+  if not utils.is_file(target_path) then
     return Result:new(
       Types.SELECTED_LAUNCH_TARGET_NOT_BUILT,
-      target_path.filename,
-      "Selected target is not built: " .. target_path.filename
+      target_path,
+      "Selected target is not built: " .. target_path
     )
   end
 
-  return Result:new(Types.SUCCESS, target_path.filename, "yeah, that's good")
+  return Result:new(Types.SUCCESS, target_path, "yeah, that's good")
 end
 
 ---Retrieve launch target path
@@ -349,8 +368,7 @@ end
 ---@return cmake.Result
 function Config:check_build_target()
   -- 1. not configured
-  local build_directory = Path:new(self.build_directory)
-  if not build_directory:exists() then
+  if not utils.is_dir(self.build_directory) then
     return Result:new(Types.NOT_CONFIGURED, nil, "You need to configure it first")
   end
 
@@ -389,23 +407,21 @@ function Config:get_build_target()
   end
   local target_info = check_result.data
   local target_path = target_info["artifacts"][1]["path"]
-  target_path = Path:new(target_path)
-  if not target_path:is_absolute() then
+  if not is_absolute(target_path) then
     -- then it is a relative path, based on build directory
-    local build_directory = Path:new(self.build_directory)
-    target_path = build_directory / target_path
+    target_path = join(self.build_directory, target_path)
   end
   -- else it is an absolute path
 
-  if not target_path:is_file() then
+  if not utils.is_file(target_path) then
     return Result:new(
       Types.SELECTED_LAUNCH_TARGET_NOT_BUILT,
       nil,
-      "Selected target is not built: " .. target_path.filename
+      "Selected target is not built: " .. target_path
     )
   end
 
-  return Result:new(Types.SUCCESS, target_path.filename, "yeah, that's good")
+  return Result:new(Types.SUCCESS, target_path, "yeah, that's good")
 end
 
 ---Check if this launch target is debuggable using variants.debuggable

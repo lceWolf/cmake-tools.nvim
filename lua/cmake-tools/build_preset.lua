@@ -1,4 +1,3 @@
-local Path = require("plenary.path")
 local osys = require("cmake-tools.osys")
 
 ---@class BuildPreset: CMakeBuildPreset

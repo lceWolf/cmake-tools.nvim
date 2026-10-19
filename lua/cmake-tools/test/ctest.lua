@@ -1,4 +1,4 @@
-local Job = require("plenary.job")
+local log = require("cmake-tools.log")
 local utils = require("cmake-tools.utils")
 
 local ctest = {
@@ -6,8 +6,6 @@ local ctest = {
 }
 
 function ctest.list_all_tests(build_dir, preset_name, callback)
-  local result = {}
-
   local args
   if preset_name then
     args = { "--preset", preset_name, "--show-only=json-v1" }
@@ -15,21 +13,38 @@ function ctest.list_all_tests(build_dir, preset_name, callback)
     args = { "--test-dir", build_dir, "--show-only=json-v1" }
   end
 
-  ctest.job = Job:new({
-    command = "ctest",
-    args = args,
-    on_exit = function(j, _, _)
+  local handle
+  local ok, result = pcall(
+    vim.system,
+    vim.list_extend({ "ctest" }, args),
+    { text = true },
+    function(res)
       vim.schedule(function()
-        local json_data = ""
-
-        for _, v in pairs(j:result()) do
-          json_data = json_data .. v
+        if ctest.job == handle then
+          ctest.job = nil
         end
 
-        result = vim.fn.json_decode(json_data)
+        local decoded
+        if res.code == 0 and res.stdout and res.stdout ~= "" then
+          local decode_ok, value = pcall(vim.json.decode, res.stdout)
+          if decode_ok and type(value) == "table" then
+            decoded = value
+          end
+        end
+
+        if not decoded then
+          log.error(
+            "Failed to list ctest tests (exit code "
+              .. tostring(res.code)
+              .. "): "
+              .. (res.stderr or "")
+          )
+          callback({})
+          return
+        end
 
         local tests = {}
-        for _, item in ipairs(result.tests) do
+        for _, item in ipairs(decoded.tests or {}) do
           local labels = {}
           if item["properties"] then
             for _, prop in ipairs(item["properties"]) do
@@ -43,10 +58,16 @@ function ctest.list_all_tests(build_dir, preset_name, callback)
         end
         callback(tests)
       end)
-    end,
-  })
+    end
+  )
 
-  ctest.job:start()
+  if not ok then
+    log.error(tostring(result))
+    callback({})
+    return
+  end
+  handle = result
+  ctest.job = handle
 end
 
 --- Collect all labels from test objects with counts
@@ -94,14 +115,15 @@ function ctest.run(ctest_command, env, config, opt)
 end
 
 function ctest.stop()
-  if not ctest.job or ctest.job.is_shut_down then
+  local job = ctest.job
+  if not job or job:is_closing() then
     return
   end
-  ctest.job:shutdown(1, 9)
 
-  for _, pid in ipairs(vim.api.nvim_get_proc_children(ctest.job.pid)) do
-    vim.loop.kill(pid, 9)
+  for _, pid in ipairs(vim.api.nvim_get_proc_children(job.pid)) do
+    vim.uv.kill(pid, 9)
   end
+  job:kill(9)
 end
 
 return ctest

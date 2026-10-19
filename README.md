@@ -12,8 +12,7 @@ The goal of this plugin is to offer a comprehensive, convenient, and powerful wo
 
 ## :sparkles: Installation
 
-- Require Neovim (>=0.7).
-- Require [plenary](https://github.com/nvim-lua/plenary.nvim).
+- Require Neovim (>=0.10).
 - Allow integerating with [overseer](https://github.com/stevearc/overseer.nvim), optional, if you want this feature, please install it firstly.
 - Allow integerating with [toggleterm](https://github.com/akinsho/toggleterm.nvim), optional, if you want this feature, please install it firstly.
 - Install it like any other Neovim plugin.
@@ -206,4 +205,3 @@ make test BUSTED_ARGS=tests/utils_run_spec.lua # run a single file
 
 1. [vscode-cmake-tools](https://github.com/microsoft/vscode-cmake-tools) is an amazing plugin for CMake-based project in Visual Studio Code, [MIT LICENSE](https://github.com/microsoft/vscode-cmake-tools/blob/main/LICENSE.txt).
 2. Inspired by [neovim-cmake](https://github.com/Shatur/neovim-cmake) which is made by [Shatur](https://github.com/Shatur), [GPL-3.0 license](https://github.com/Shatur/neovim-cmake/blob/master/COPYING).
-3. [plenary](https://github.com/nvim-lua/plenary.nvim), [MIT LICENSE](https://github.com/nvim-lua/plenary.nvim/blob/master/LICENSE).

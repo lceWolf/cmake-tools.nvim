@@ -1,19 +1,22 @@
-local popup = require("plenary.popup")
-
 local function create_window(title)
-  local width = 80
-  local height = 20
-  local borderchars = { "─", "│", "─", "│", "╭", "╮", "╯", "╰" }
+  local width = math.min(80, vim.o.columns)
+  local height = math.min(20, vim.o.lines)
   local bufnr = vim.api.nvim_create_buf(false, false)
 
-  local win_id, _ = popup.create(bufnr, {
-    title = title,
-    line = math.floor(((vim.o.lines - height) / 2) - 1),
-    col = math.floor((vim.o.columns - width) / 2),
-    minwidth = width,
-    minheight = height,
-    borderchars = borderchars,
-  })
+  local config = {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = math.max(0, math.floor((vim.o.lines - height) / 2 - 1)),
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    border = "rounded",
+  }
+  if title and title ~= "" then
+    config.title = title
+    config.title_pos = "center"
+  end
+
+  local win_id = vim.api.nvim_open_win(bufnr, true, config)
 
   return {
     bufnr = bufnr,
@@ -77,12 +80,12 @@ function M.open()
   M.win_id = win_info.win_id
   M.bufh = win_info.bufnr
 
-  vim.api.nvim_win_set_option(M.win_id, "number", true)
+  vim.wo[M.win_id].number = true
   vim.api.nvim_buf_set_name(M.bufh, "cmake-tools.env-config")
   vim.api.nvim_buf_set_lines(M.bufh, 0, #M.content, false, M.content)
-  vim.api.nvim_buf_set_option(M.bufh, "filetype", "lua")
-  vim.api.nvim_buf_set_option(M.bufh, "buftype", "acwrite")
-  vim.api.nvim_buf_set_option(M.bufh, "bufhidden", "delete")
+  vim.bo[M.bufh].filetype = "lua"
+  vim.bo[M.bufh].buftype = "acwrite"
+  vim.bo[M.bufh].bufhidden = "delete"
 
   vim.keymap.set("n", "q", function()
     M.toggle_window()
@@ -114,7 +117,10 @@ function M.open()
     end,
   })
 
-  vim.cmd(string.format("autocmd BufModifiedSet <buffer=%s> set nomodified", M.bufh))
+  vim.api.nvim_create_autocmd("BufModifiedSet", {
+    buffer = M.bufh,
+    command = "set nomodified",
+  })
 end
 
 function M.toggle_window()

@@ -1,4 +1,3 @@
-local Path = require("plenary.path")
 local osys = require("cmake-tools.osys")
 local Result = require("cmake-tools.result")
 local Types = require("cmake-tools.types")
@@ -27,8 +26,8 @@ function utils.save_all_named_buffers()
 end
 
 function utils.get_cmake_configuration(cwd)
-  local cmakelists = Path:new(cwd, "CMakeLists.txt")
-  if not cmakelists:is_file() then
+  local cmakelists = vim.fs.joinpath(cwd, "CMakeLists.txt")
+  if not utils.is_file(cmakelists) then
     return Result:new(
       Types.CANNOT_FIND_CMAKE_CONFIGURATION_FILE,
       nil,
@@ -59,23 +58,76 @@ function utils.get_path(str, sep)
   return str:match("(.*" .. sep .. ")")
 end
 
+---@param dir string
+---@return boolean success
 function utils.mkdir(dir)
-  local _dir = Path:new(dir)
-  _dir:mkdir({ parents = true, exists_ok = true })
+  if utils.is_dir(dir) then
+    return true
+  end
+  pcall(vim.fn.mkdir, dir, "p")
+  return utils.is_dir(dir)
 end
 
+---@param file string
 function utils.rmfile(file)
-  if file:exists() then
-    file:rm()
+  if utils.file_exists(file) then
+    os.remove(file)
   end
 end
 
+---@param path string
+---@return boolean
 function utils.file_exists(path)
-  local file = Path:new(path)
-  if not file:exists() then
+  return vim.uv.fs_stat(path) ~= nil
+end
+
+---@param path string
+---@return boolean
+function utils.is_file(path)
+  local stat = vim.uv.fs_stat(path)
+  return stat ~= nil and stat.type == "file"
+end
+
+---@param path string
+---@return boolean
+function utils.is_dir(path)
+  local stat = vim.uv.fs_stat(path)
+  return stat ~= nil and stat.type == "directory"
+end
+
+---Create an empty file if it does not exist yet
+---@param path string
+---@return boolean success
+function utils.touch(path)
+  local file = io.open(path, "a")
+  if not file then
     return false
   end
+  file:close()
   return true
+end
+
+---@param path string
+---@return string|nil content
+function utils.read_file(path)
+  local file = io.open(path, "r")
+  if not file then
+    return nil
+  end
+  local content = file:read("*a")
+  file:close()
+  return content
+end
+
+---Absolute path without trailing separator
+---@param path string
+---@return string
+function utils.abspath(path)
+  local abs = vim.fn.fnamemodify(path, ":p")
+  if #abs > 1 and not abs:match("^%a:[/\\]$") then
+    abs = abs:gsub("[/\\]$", "")
+  end
+  return abs
 end
 
 function utils.deepcopy(orig, copies)
