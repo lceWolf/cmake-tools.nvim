@@ -204,6 +204,26 @@ describe("Presets", function()
         assert.same({ "dev", "from_env" }, sorted(names))
       end)
     end)
+
+    it("does not leak an expanded inList condition between presets sharing it", function()
+      write_json(join(tmp, "CMakePresets.json"), {
+        version = 6,
+        configurePresets = {
+          {
+            name = "base",
+            hidden = true,
+            condition = { type = "inList", string = "${presetName}", list = { "a" } },
+          },
+          { name = "a", inherits = "base", binaryDir = "build/a" },
+          { name = "b", inherits = "base", binaryDir = "build/b" },
+        },
+      })
+
+      local parsed = Presets:parse(tmp)
+
+      assert.is_false(parsed:get_configure_preset("a", { include_disabled = true }).disabled)
+      assert.is_true(parsed:get_configure_preset("b", { include_disabled = true }).disabled)
+    end)
   end)
 
   describe("preset lookup", function()

@@ -85,13 +85,13 @@ local function resolveConditions(self)
           error("condition field missing required array field 'list'")
         end
 
-        cond.string = expandMacro(self, cond.string)
+        local str = expandMacro(self, cond.string)
 
         for _, entry in ipairs(cond.list) do
           if type(entry) ~= "string" then
             error("list field must be of type string")
           end
-          if cond.string == expandMacro(self, entry) then
+          if str == expandMacro(self, entry) then
             return true
           end
         end
