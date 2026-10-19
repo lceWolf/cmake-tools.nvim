@@ -6,6 +6,11 @@
       "types": true
     }
   },
+  "lspconfig": {
+    "lua_ls": {
+      "Lua.workspace.library": ["${3rd}/busted/library", "${3rd}/luassert/library"]
+    }
+  },
   "neoconf": {
     "plugins": {
       "lua_ls": {

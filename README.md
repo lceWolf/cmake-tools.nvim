@@ -187,8 +187,16 @@ Generally, the default is enough.
 
 If you want to implement a missing feature, [consider making a PR](./docs/contribute.md).
 
-Optionally you can even add tests. We use [plenary test harness](https://github.com/nvim-lua/plenary.nvim#plenarytest_harness), as taken from [neotest-rust](https://github.com/rouge8/neotest-rust).
-The tests run from inside a neovim instance, so `vim` and such are available.
+Optionally you can even add tests. We use [busted](https://lunarmodules.github.io/busted/) with [nlua](https://github.com/mfussenegger/nlua),
+so the tests run from inside a neovim instance and `vim` and such are available.
+Test files live in `tests/` and must end in `_spec.lua`.
+
+Running the tests requires [luarocks](https://luarocks.org/) for Lua 5.1/LuaJIT; the dependencies are installed into `.rocks/`.
+
+```sh
+make test                                     # run all tests
+make test BUSTED_ARGS=tests/utils_run_spec.lua # run a single file
+```
 
 ## LICENCE
 

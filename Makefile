@@ -1,12 +1,21 @@
-.PHONY: test clean
+.PHONY: test deps clean
 
-test: deps/plenary.nvim
-	./scripts/test
+ROCKS := .rocks
+LUAROCKS := luarocks --tree $(ROCKS) --lua-version 5.1
 
-deps/plenary.nvim:
-	mkdir -p deps
-	git clone --depth 1 https://github.com/nvim-lua/plenary.nvim.git $@
+test: deps
+	eval "$$($(LUAROCKS) path)" && PATH="$(ROCKS)/bin:$$PATH" busted $(BUSTED_ARGS)
+
+deps: $(ROCKS)/bin/busted $(ROCKS)/bin/nlua $(ROCKS)/lib/luarocks/rocks-5.1/plenary.nvim
+
+$(ROCKS)/bin/busted:
+	$(LUAROCKS) install busted
+
+$(ROCKS)/bin/nlua:
+	$(LUAROCKS) install nlua
+
+$(ROCKS)/lib/luarocks/rocks-5.1/plenary.nvim:
+	$(LUAROCKS) install plenary.nvim
 
 clean:
-	rm -rf deps/plenary.nvim
-
+	rm -rf $(ROCKS)
