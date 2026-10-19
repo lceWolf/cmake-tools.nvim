@@ -1,4 +1,5 @@
 local Presets = require("cmake-tools.presets")
+local Preset = require("cmake-tools.preset")
 
 local join = vim.fs.joinpath
 
@@ -39,6 +40,26 @@ describe("Presets", function()
       assert.equals(join(tmp, "CMakeUserPresets.json"), user)
       assert.equals(join(tmp, "CMakePresets.json"), project)
       assert.is_true(Presets.exists(tmp))
+    end)
+
+    it("returns only CMakePresets.json when it is the sole file", function()
+      write_json(join(tmp, "CMakePresets.json"), { version = 3 })
+
+      local first, second = Presets.find_preset_files(tmp)
+
+      assert.equals(join(tmp, "CMakePresets.json"), first)
+      assert.is_nil(second)
+      assert.is_true(Presets.exists(tmp))
+    end)
+
+    it("finds the kebab-case preset files", function()
+      write_json(join(tmp, "cmake-presets.json"), { version = 3 })
+      write_json(join(tmp, "cmake-user-presets.json"), { version = 3 })
+
+      local user, project = Presets.find_preset_files(tmp)
+
+      assert.equals(join(tmp, "cmake-user-presets.json"), user)
+      assert.equals(join(tmp, "cmake-presets.json"), project)
     end)
   end)
 
@@ -102,5 +123,672 @@ describe("Presets", function()
     end)
 
     pending("expands ${fileDir} to the directory of an included preset file")
+
+    it("parses a directory with only CMakePresets.json", function()
+      write_json(join(tmp, "CMakePresets.json"), {
+        version = 3,
+        configurePresets = { { name = "only", binaryDir = "build/only" } },
+      })
+
+      local presets = Presets:parse(tmp)
+
+      assert.same({ "only" }, presets:get_configure_preset_names())
+    end)
+
+    it("parses kebab-case preset files and implicitly includes cmake-presets.json", function()
+      write_json(join(tmp, "cmake-presets.json"), {
+        version = 3,
+        configurePresets = { { name = "project", binaryDir = "build/project" } },
+      })
+      write_json(join(tmp, "cmake-user-presets.json"), {
+        version = 3,
+        configurePresets = { { name = "user", inherits = "project" } },
+      })
+
+      local presets = Presets:parse(tmp)
+
+      assert.same({ "project", "user" }, sorted(presets:get_configure_preset_names()))
+      assert.equals("build/project", presets:get_configure_preset("user").binaryDir)
+    end)
+
+    it("terminates on include cycles and keeps presets from both files", function()
+      write_json(join(tmp, "CMakePresets.json"), {
+        version = 4,
+        include = { "other.json" },
+        configurePresets = { { name = "a", binaryDir = "build/a" } },
+      })
+      write_json(join(tmp, "other.json"), {
+        version = 4,
+        include = { "CMakePresets.json" },
+        configurePresets = { { name = "b", binaryDir = "build/b" } },
+      })
+
+      local names = Presets:parse(tmp):get_configure_preset_names()
+
+      assert.same({ "a", "b" }, sorted(names))
+    end)
+
+    it("raises an error for invalid JSON", function()
+      vim.fn.writefile({ "{ not json" }, join(tmp, "CMakePresets.json"))
+
+      assert.has_error(function()
+        Presets:parse(tmp)
+      end)
+    end)
+
+    describe("with $penv in include paths", function()
+      local saved
+
+      before_each(function()
+        saved = vim.env.CMT_TEST_INCLUDE_DIR
+      end)
+
+      after_each(function()
+        vim.env.CMT_TEST_INCLUDE_DIR = saved
+      end)
+
+      it("expands $penv{VAR}", function()
+        vim.env.CMT_TEST_INCLUDE_DIR = join(tmp, "env_inc")
+        write_json(join(tmp, "env_inc", "extra.json"), {
+          version = 4,
+          configurePresets = { { name = "from_env", binaryDir = "build/env" } },
+        })
+        write_json(join(tmp, "CMakePresets.json"), {
+          version = 4,
+          include = { "$penv{CMT_TEST_INCLUDE_DIR}/extra.json" },
+          configurePresets = { { name = "dev", binaryDir = "build/dev" } },
+        })
+
+        local names = Presets:parse(tmp):get_configure_preset_names()
+
+        assert.same({ "dev", "from_env" }, sorted(names))
+      end)
+    end)
+  end)
+
+  describe("preset lookup", function()
+    local presets
+
+    before_each(function()
+      write_json(join(tmp, "CMakePresets.json"), {
+        version = 6,
+        configurePresets = {
+          { name = "on", binaryDir = "build/on" },
+          { name = "hid", hidden = true, binaryDir = "build/hid" },
+          { name = "off", binaryDir = "build/off", condition = { type = "const", value = false } },
+        },
+        buildPresets = {
+          { name = "b_on", configurePreset = "on" },
+          { name = "b_off", configurePreset = "off" },
+          { name = "b_hid", configurePreset = "hid" },
+          { name = "b_missing", configurePreset = "nope" },
+          { name = "b_none" },
+          { name = "b_hidden", hidden = true },
+        },
+        testPresets = {
+          { name = "t_on", configurePreset = "on" },
+          { name = "t_hidden", hidden = true },
+        },
+      })
+      presets = Presets:parse(tmp)
+    end)
+
+    it("hides hidden and disabled configure presets by default", function()
+      assert.same({ "on" }, presets:get_configure_preset_names())
+      assert.is_nil(presets:get_configure_preset("hid"))
+      assert.is_nil(presets:get_configure_preset("off"))
+      assert.equals("on", presets:get_configure_preset("on").name)
+    end)
+
+    it("includes hidden configure presets with include_hidden", function()
+      assert.same(
+        { "hid", "on" },
+        sorted(presets:get_configure_preset_names({ include_hidden = true }))
+      )
+      assert.equals("hid", presets:get_configure_preset("hid", { include_hidden = true }).name)
+      assert.is_nil(presets:get_configure_preset("off", { include_hidden = true }))
+    end)
+
+    it("includes disabled configure presets with include_disabled", function()
+      assert.same(
+        { "off", "on" },
+        sorted(presets:get_configure_preset_names({ include_disabled = true }))
+      )
+      assert.is_true(presets:get_configure_preset("off", { include_disabled = true }).disabled)
+      assert.is_nil(presets:get_configure_preset("hid", { include_disabled = true }))
+    end)
+
+    it("includes everything with include_hidden and include_disabled", function()
+      local names =
+        presets:get_configure_preset_names({ include_hidden = true, include_disabled = true })
+
+      assert.same({ "hid", "off", "on" }, sorted(names))
+    end)
+
+    it("appends a None entry to buildPresets and testPresets", function()
+      local build_none = presets:get_build_preset("None")
+      local test_none = presets:get_test_preset("None")
+
+      assert.equals("None", presets.buildPresets[#presets.buildPresets].name)
+      assert.equals("None", presets.testPresets[#presets.testPresets].name)
+      assert.is_false(build_none.valid)
+      assert.is_false(test_none.valid)
+    end)
+
+    it("lists test preset names without hidden ones", function()
+      assert.same({ "None", "t_on" }, sorted(presets:get_test_preset_names()))
+      assert.same(
+        { "None", "t_hidden", "t_on" },
+        sorted(presets:get_test_preset_names({ include_hidden = true }))
+      )
+    end)
+
+    it("gets a test preset by name", function()
+      local preset = presets:get_test_preset("t_on")
+
+      assert.equals("on", preset.configurePreset)
+      assert.is_true(preset:isValid())
+      assert.equals(tmp, preset.cwd)
+      assert.is_nil(presets:get_test_preset("t_hidden"))
+      assert.equals("t_hidden", presets:get_test_preset("t_hidden", { include_hidden = true }).name)
+      assert.is_nil(presets:get_test_preset("missing"))
+    end)
+
+    it("hides build presets whose configure preset is disabled", function()
+      local names = sorted(presets:get_build_preset_names({}))
+
+      assert.is_false(vim.tbl_contains(names, "b_off"))
+    end)
+
+    it("shows build presets of disabled configure presets with include_disabled", function()
+      local names = presets:get_build_preset_names({ include_disabled = true })
+
+      assert.is_true(vim.tbl_contains(names, "b_off"))
+    end)
+
+    it("keeps build presets without a configure preset", function()
+      local names = presets:get_build_preset_names({})
+
+      assert.is_true(vim.tbl_contains(names, "b_none"))
+      assert.is_true(vim.tbl_contains(names, "None"))
+    end)
+
+    it("keeps build presets whose configure preset is hidden", function()
+      local names = presets:get_build_preset_names({})
+
+      assert.is_true(vim.tbl_contains(names, "b_hid"))
+    end)
+
+    it("drops build presets whose configure preset does not exist", function()
+      assert.is_false(vim.tbl_contains(presets:get_build_preset_names({}), "b_missing"))
+      assert.is_false(
+        vim.tbl_contains(presets:get_build_preset_names({ include_disabled = true }), "b_missing")
+      )
+    end)
+
+    it("hides hidden build presets unless include_hidden", function()
+      assert.is_false(vim.tbl_contains(presets:get_build_preset_names({}), "b_hidden"))
+      assert.is_true(
+        vim.tbl_contains(presets:get_build_preset_names({ include_hidden = true }), "b_hidden")
+      )
+    end)
+  end)
+end)
+
+describe("ConfigurePreset", function()
+  local tmp
+
+  before_each(function()
+    tmp = vim.fn.tempname()
+    vim.fn.mkdir(tmp, "p")
+  end)
+
+  after_each(function()
+    vim.fn.delete(tmp, "rf")
+  end)
+
+  local function new_preset(obj, parents)
+    parents = parents or {}
+    return Preset:new(tmp, obj, function(name)
+      return parents[name]
+    end)
+  end
+
+  local function is_disabled(condition, extra)
+    local obj = vim.tbl_extend("force", { name = "p", condition = condition }, extra or {})
+    return new_preset(obj).disabled
+  end
+
+  describe("conditions", function()
+    it("is enabled without a condition", function()
+      assert.is_false(new_preset({ name = "p" }).disabled)
+    end)
+
+    it("handles const", function()
+      assert.is_false(is_disabled({ type = "const", value = true }))
+      assert.is_true(is_disabled({ type = "const", value = false }))
+    end)
+
+    it("handles equals", function()
+      assert.is_false(is_disabled({ type = "equals", lhs = "a", rhs = "a" }))
+      assert.is_true(is_disabled({ type = "equals", lhs = "a", rhs = "b" }))
+    end)
+
+    it("handles notEquals", function()
+      assert.is_false(is_disabled({ type = "notEquals", lhs = "a", rhs = "b" }))
+      assert.is_true(is_disabled({ type = "notEquals", lhs = "a", rhs = "a" }))
+    end)
+
+    it("handles inList", function()
+      assert.is_false(is_disabled({ type = "inList", string = "a", list = { "x", "a" } }))
+      assert.is_true(is_disabled({ type = "inList", string = "c", list = { "x", "a" } }))
+    end)
+
+    it("handles notInList", function()
+      assert.is_false(is_disabled({ type = "notInList", string = "c", list = { "x", "a" } }))
+      assert.is_true(is_disabled({ type = "notInList", string = "a", list = { "x", "a" } }))
+    end)
+
+    it("handles anyOf with one true condition", function()
+      local cond = {
+        type = "anyOf",
+        conditions = { { type = "const", value = false }, { type = "const", value = true } },
+      }
+
+      assert.is_false(is_disabled(cond))
+    end)
+
+    it("handles allOf", function()
+      local all_true = {
+        type = "allOf",
+        conditions = { { type = "const", value = true }, { type = "const", value = true } },
+      }
+      local one_false = {
+        type = "allOf",
+        conditions = { { type = "const", value = true }, { type = "const", value = false } },
+      }
+
+      assert.is_false(is_disabled(all_true))
+      assert.is_true(is_disabled(one_false))
+    end)
+
+    it("handles not", function()
+      assert.is_true(is_disabled({ type = "not", condition = { type = "const", value = true } }))
+      assert.is_false(is_disabled({ type = "not", condition = { type = "const", value = false } }))
+    end)
+
+    it("handles nested conditions", function()
+      local cond = {
+        type = "allOf",
+        conditions = {
+          { type = "not", condition = { type = "const", value = false } },
+          { type = "equals", lhs = "a", rhs = "a" },
+        },
+      }
+
+      assert.is_false(is_disabled(cond))
+    end)
+
+    it("expands macros inside conditions", function()
+      assert.is_false(is_disabled({ type = "equals", lhs = "${presetName}", rhs = "p" }))
+      assert.is_true(is_disabled({ type = "equals", lhs = "${presetName}", rhs = "other" }))
+      assert.is_false(is_disabled({ type = "inList", string = "${presetName}", list = { "p" } }))
+    end)
+
+    it("expands environment variables inside conditions", function()
+      local cond = { type = "equals", lhs = "$env{MODE}", rhs = "fast" }
+
+      assert.is_false(is_disabled(cond, { environment = { MODE = "fast" } }))
+      assert.is_true(is_disabled(cond, { environment = { MODE = "slow" } }))
+    end)
+
+    it("inherits the condition from a parent", function()
+      local parents = {
+        base = { name = "base", hidden = true, condition = { type = "const", value = false } },
+      }
+
+      assert.is_true(new_preset({ name = "child", inherits = "base" }, parents).disabled)
+    end)
+
+    it("prefers the condition of the child over the parent", function()
+      local parents = {
+        base = { name = "base", hidden = true, condition = { type = "const", value = false } },
+      }
+      local child = {
+        name = "child",
+        inherits = "base",
+        condition = { type = "const", value = true },
+      }
+
+      assert.is_false(new_preset(child, parents).disabled)
+    end)
+
+    it("raises an error for a condition without a type", function()
+      assert.has_error(function()
+        new_preset({ name = "p", condition = { value = true } })
+      end)
+    end)
+
+    it("raises an error for equals without rhs", function()
+      assert.has_error(function()
+        new_preset({ name = "p", condition = { type = "equals", lhs = "a" } })
+      end)
+    end)
+
+    it("raises an error for anyOf without a conditions array", function()
+      assert.has_error(function()
+        new_preset({ name = "p", condition = { type = "anyOf", conditions = "x" } })
+      end)
+    end)
+  end)
+
+  describe("environment", function()
+    local saved
+
+    before_each(function()
+      saved = { vim.env.CMT_TEST_VAR, vim.env.CMT_TEST_OTHER }
+    end)
+
+    after_each(function()
+      vim.env.CMT_TEST_VAR = saved[1]
+      vim.env.CMT_TEST_OTHER = saved[2]
+    end)
+
+    it("inherits the environment from a parent", function()
+      local parents = { base = { name = "base", environment = { A = "1" } } }
+
+      local preset = new_preset({ name = "child", inherits = "base" }, parents)
+
+      assert.equals("1", preset.environment.A)
+    end)
+
+    it("lets the child override the parent", function()
+      local parents = { base = { name = "base", environment = { A = "1", B = "2" } } }
+
+      local preset =
+        new_preset({ name = "child", inherits = "base", environment = { A = "x" } }, parents)
+
+      assert.equals("x", preset.environment.A)
+      assert.equals("2", preset.environment.B)
+    end)
+
+    it("resolves $env{X} referencing another environment entry", function()
+      local preset = new_preset({ name = "p", environment = { A = "1", B = "$env{A}/x" } })
+
+      assert.equals("1/x", preset.environment.B)
+    end)
+
+    it("resolves a chain of $env references", function()
+      local preset = new_preset({
+        name = "p",
+        environment = { A = "1", B = "$env{A}b", C = "$env{B}c" },
+      })
+
+      assert.equals("1bc", preset.environment.C)
+    end)
+
+    it("resolves $env references to a parent entry", function()
+      local parents = { base = { name = "base", environment = { A = "1" } } }
+
+      local preset =
+        new_preset({ name = "child", inherits = "base", environment = { B = "$env{A}!" } }, parents)
+
+      assert.equals("1!", preset.environment.B)
+    end)
+
+    it("resolves $penv{X} from the process environment", function()
+      vim.env.CMT_TEST_VAR = "from_process"
+
+      local preset = new_preset({ name = "p", environment = { A = "$penv{CMT_TEST_VAR}/x" } })
+
+      assert.equals("from_process/x", preset.environment.A)
+    end)
+
+    it("falls back to the process environment for unknown $env{X}", function()
+      vim.env.CMT_TEST_OTHER = "fallback"
+
+      local preset = new_preset({ name = "p", environment = { A = "$env{CMT_TEST_OTHER}" } })
+
+      assert.equals("fallback", preset.environment.A)
+    end)
+
+    it("resolves unknown variables to an empty string", function()
+      vim.env.CMT_TEST_OTHER = nil
+
+      local preset = new_preset({ name = "p", environment = { A = "[$env{CMT_TEST_OTHER}]" } })
+
+      assert.equals("[]", preset.environment.A)
+    end)
+
+    it("raises an error for circular references", function()
+      assert.has_error(function()
+        new_preset({ name = "p", environment = { A = "$env{B}", B = "$env{A}" } })
+      end)
+    end)
+
+    it("raises an error for a self reference", function()
+      assert.has_error(function()
+        new_preset({ name = "p", environment = { A = "$env{A}" } })
+      end)
+    end)
+  end)
+
+  describe("inheritance", function()
+    it("supports multiple parents where the first parent wins", function()
+      local parents = {
+        one = {
+          name = "one",
+          binaryDir = "build/one",
+          cacheVariables = { X = "one", ONLY_ONE = "1" },
+          environment = { E = "one" },
+        },
+        two = {
+          name = "two",
+          binaryDir = "build/two",
+          cacheVariables = { X = "two", ONLY_TWO = "2" },
+          environment = { E = "two", ONLY_TWO = "2" },
+        },
+      }
+
+      local preset = new_preset({ name = "child", inherits = { "one", "two" } }, parents)
+
+      assert.equals("one", preset.cacheVariables.X)
+      assert.equals("1", preset.cacheVariables.ONLY_ONE)
+      assert.equals("2", preset.cacheVariables.ONLY_TWO)
+      assert.equals("one", preset.environment.E)
+      assert.equals("2", preset.environment.ONLY_TWO)
+      assert.equals("build/one", preset.binaryDir)
+    end)
+
+    it("inherits through a multi-level chain", function()
+      local parents = {
+        parent = {
+          name = "parent",
+          inherits = "grand",
+          cacheVariables = { P = "parent" },
+          environment = { P = "parent" },
+        },
+        grand = {
+          name = "grand",
+          binaryDir = "build/grand",
+          cacheVariables = { G = "grand", P = "grand" },
+          environment = { G = "grand", P = "grand" },
+        },
+      }
+
+      local preset = new_preset({ name = "child", inherits = "parent" }, parents)
+
+      assert.equals("grand", preset.cacheVariables.G)
+      assert.equals("parent", preset.cacheVariables.P)
+      assert.equals("grand", preset.environment.G)
+      assert.equals("parent", preset.environment.P)
+      assert.equals("build/grand", preset.binaryDir)
+    end)
+
+    it("prefers the binaryDir of the nearest ancestor", function()
+      local parents = {
+        parent = { name = "parent", inherits = "grand", binaryDir = "build/parent" },
+        grand = { name = "grand", binaryDir = "build/grand" },
+      }
+
+      local preset = new_preset({ name = "child", inherits = "parent" }, parents)
+
+      assert.equals("build/parent", preset.binaryDir)
+    end)
+
+    it("ignores unknown parents", function()
+      local preset = new_preset({ name = "child", inherits = "missing", binaryDir = "b" })
+
+      assert.equals("b", preset.binaryDir)
+    end)
+  end)
+
+  describe("macros", function()
+    local saved
+
+    before_each(function()
+      saved = vim.env.CMT_TEST_VAR
+    end)
+
+    after_each(function()
+      vim.env.CMT_TEST_VAR = saved
+    end)
+
+    local function expand(value, extra)
+      local obj =
+        vim.tbl_extend("force", { name = "dev", cacheVariables = { V = value } }, extra or {})
+      return new_preset(obj).cacheVariables.V
+    end
+
+    it("expands ${sourceDir}", function()
+      assert.equals("./build", expand("${sourceDir}/build"))
+    end)
+
+    it("expands ${sourceDirName}", function()
+      assert.equals("x-" .. vim.fn.fnamemodify(tmp, ":t"), expand("x-${sourceDirName}"))
+    end)
+
+    it("expands ${presetName}", function()
+      assert.equals("build/dev", expand("build/${presetName}"))
+    end)
+
+    it("expands ${generator}", function()
+      assert.equals("gen=Ninja", expand("gen=${generator}", { generator = "Ninja" }))
+    end)
+
+    it("expands ${hostSystemName}", function()
+      local expected = vim.fn.has("win32") == 1 and "Windows" or vim.uv.os_uname().sysname
+
+      assert.equals(expected, expand("${hostSystemName}"))
+    end)
+
+    it("expands ${dollar}", function()
+      assert.equals("$x", expand("${dollar}x"))
+    end)
+
+    it("expands $env{} in cacheVariables from the preset environment", function()
+      assert.equals("/r/x", expand("$env{ROOT}/x", { environment = { ROOT = "/r" } }))
+    end)
+
+    it("expands $env{} in binaryDir", function()
+      local preset = new_preset({
+        name = "dev",
+        binaryDir = "$env{ROOT}/build/${presetName}",
+        environment = { ROOT = "/r" },
+      })
+
+      assert.equals("/r/build/dev", preset.binaryDirExpanded)
+    end)
+
+    it("expands $penv{} in binaryDir", function()
+      vim.env.CMT_TEST_VAR = "/proc_root"
+
+      local preset = new_preset({ name = "dev", binaryDir = "$penv{CMT_TEST_VAR}/build" })
+
+      assert.equals("/proc_root/build", preset.binaryDirExpanded)
+    end)
+
+    it("expands macros in binaryDir", function()
+      local preset = new_preset({ name = "dev", binaryDir = "${sourceDir}/build/${presetName}" })
+
+      assert.equals("./build/dev", preset.binaryDirExpanded)
+    end)
+
+    it("leaves binaryDirExpanded unset without a binaryDir", function()
+      assert.is_nil(new_preset({ name = "dev" }).binaryDirExpanded)
+    end)
+
+    it("expands the value of object-form cacheVariables", function()
+      local preset = new_preset({
+        name = "dev",
+        cacheVariables = {
+          A = { type = "STRING", value = "name-${presetName}" },
+          B = { type = "PATH", value = "${sourceDir}/out" },
+          C = { type = "BOOL", value = true },
+        },
+      })
+
+      assert.equals("name-dev", preset.cacheVariables.A)
+      assert.equals("./out", preset.cacheVariables.B)
+      assert.is_true(preset.cacheVariables.C)
+    end)
+
+    it("expands macros in inherited cacheVariables with the child's name", function()
+      local parents = {
+        base = { name = "base", cacheVariables = { N = "${presetName}" } },
+      }
+
+      local preset = new_preset({ name = "child", inherits = "base" }, parents)
+
+      assert.equals("child", preset.cacheVariables.N)
+    end)
+  end)
+
+  describe("build type", function()
+    it("defaults to Debug", function()
+      assert.equals("Debug", new_preset({ name = "p" }):get_build_type())
+    end)
+
+    it("reads CMAKE_BUILD_TYPE", function()
+      local preset = new_preset({ name = "p", cacheVariables = { CMAKE_BUILD_TYPE = "Release" } })
+
+      assert.equals("Release", preset:get_build_type())
+    end)
+
+    it("reads CMAKE_BUILD_TYPE from the object form", function()
+      local preset = new_preset({
+        name = "p",
+        cacheVariables = { CMAKE_BUILD_TYPE = { type = "STRING", value = "MinSizeRel" } },
+      })
+
+      assert.equals("MinSizeRel", preset:get_build_type())
+    end)
+  end)
+
+  describe("get_build_configuration_types", function()
+    it("returns nil for a single-config generator", function()
+      local preset = new_preset({
+        name = "p",
+        generator = "Ninja",
+        cacheVariables = { CMAKE_CONFIGURATION_TYPES = "Debug;Release" },
+      })
+
+      assert.is_nil(preset:get_build_configuration_types())
+    end)
+
+    it("returns nil without a generator", function()
+      local preset = new_preset({
+        name = "p",
+        cacheVariables = { CMAKE_CONFIGURATION_TYPES = "Debug;Release" },
+      })
+
+      assert.is_nil(preset:get_build_configuration_types())
+    end)
+
+    it("returns nil when CMAKE_CONFIGURATION_TYPES is missing", function()
+      local preset = new_preset({ name = "p", generator = "Ninja Multi-Config" })
+
+      assert.is_nil(preset:get_build_configuration_types())
+    end)
   end)
 end)
