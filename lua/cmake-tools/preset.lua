@@ -211,6 +211,21 @@ local function resolveEnvVars(self)
   end
 end
 
+local NON_INHERITED_FIELDS = {
+  name = true,
+  hidden = true,
+  inherits = true,
+  description = true,
+  displayName = true,
+  cwd = true,
+  inheritedPresets = true,
+  environment = true,
+  cacheVariables = true,
+  disabled = true,
+  binaryDirExpanded = true,
+  __index = true,
+}
+
 local function parseTree(self, get_preset)
   local queue = { self }
   local queueIdx = 0
@@ -251,7 +266,11 @@ local function parseTree(self, get_preset)
       local current = queue[i]
       for _, parent in ipairs(current.inheritedPresets) do
         current.environment = vim.tbl_deep_extend("keep", current.environment, parent.environment)
-        current.binaryDir = current.binaryDir or parent.binaryDir
+        for key, value in pairs(parent) do
+          if current[key] == nil and not NON_INHERITED_FIELDS[key] then
+            current[key] = value
+          end
+        end
         current.cacheVariables =
           vim.tbl_deep_extend("keep", current.cacheVariables, parent.cacheVariables)
       end

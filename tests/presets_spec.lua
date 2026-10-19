@@ -656,6 +656,49 @@ describe("ConfigurePreset", function()
 
       assert.equals("b", preset.binaryDir)
     end)
+
+    it("inherits the generator from a parent", function()
+      local parents = { base = { name = "base", generator = "Ninja Multi-Config" } }
+
+      local preset = new_preset({ name = "child", inherits = "base" }, parents)
+
+      assert.equals("Ninja Multi-Config", preset.generator)
+    end)
+
+    it("inherits other scalar fields such as toolchainFile", function()
+      local parents = {
+        one = { name = "one", toolchainFile = "one.cmake", installDir = "/one" },
+        two = { name = "two", toolchainFile = "two.cmake", toolset = "ts" },
+      }
+
+      local preset =
+        new_preset({ name = "child", inherits = { "one", "two" }, installDir = "/own" }, parents)
+
+      assert.equals("one.cmake", preset.toolchainFile)
+      assert.equals("/own", preset.installDir)
+      assert.equals("ts", preset.toolset)
+    end)
+
+    it("does not inherit name, hidden or displayName", function()
+      local parents = { base = { name = "base", hidden = true, displayName = "Base" } }
+
+      local preset = new_preset({ name = "child", inherits = "base" }, parents)
+
+      assert.equals("child", preset.name)
+      assert.is_nil(preset.hidden)
+      assert.is_nil(preset.displayName)
+    end)
+
+    it("inherits the generator through a multi-level chain", function()
+      local parents = {
+        parent = { name = "parent", inherits = "grand" },
+        grand = { name = "grand", generator = "Ninja" },
+      }
+
+      local preset = new_preset({ name = "child", inherits = "parent" }, parents)
+
+      assert.equals("Ninja", preset.generator)
+    end)
   end)
 
   describe("macros", function()
