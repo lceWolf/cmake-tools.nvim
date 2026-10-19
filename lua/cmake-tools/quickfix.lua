@@ -66,7 +66,7 @@ local function line_reader(emit)
   return handler, flush
 end
 
--- how long to keep reading the pipes after the process exited
+-- how long the pipes may stay silent after the process exited before they are closed
 local DRAIN_TIMEOUT_MS = 100
 
 function _quickfix.run(cmd, env_script, env, args, cwd, opts, on_exit, on_output)
@@ -163,16 +163,19 @@ function _quickfix.run(cmd, env_script, env, args, cwd, opts, on_exit, on_output
     code = signal == 0 and code or 128 + signal
     close_handle(job.handle)
 
-    -- Deliver what is already in the pipes, but do not wait for background
-    -- children that inherited them and keep them open.
+    -- Deliver what is still in the pipes, but do not wait for background
+    -- children that inherited them and keep them open: stop reading once
+    -- the pipes stayed silent for DRAIN_TIMEOUT_MS.
     local open_pipes = 0
     local finished = false
     local timer = vim.uv.new_timer()
+    job.drain_timer = timer
     local function complete()
       if finished then
         return
       end
       finished = true
+      job.drain_timer = nil
       timer:stop()
       close_handle(timer)
       for _, pipe in ipairs({ stdout, stderr }) do
@@ -201,6 +204,7 @@ function _quickfix.run(cmd, env_script, env, args, cwd, opts, on_exit, on_output
     if open_pipes == 0 then
       complete()
     else
+      job.drain_timer_cb = complete
       timer:start(DRAIN_TIMEOUT_MS, 0, complete)
     end
   end)
@@ -231,6 +235,9 @@ function _quickfix.run(cmd, env_script, env, args, cwd, opts, on_exit, on_output
     pipe:read_start(function(err, data)
       if err then
         data = nil
+      end
+      if data ~= nil and job.drain_timer then
+        job.drain_timer:start(DRAIN_TIMEOUT_MS, 0, job.drain_timer_cb)
       end
       vim.schedule(function()
         reader(data)
@@ -267,7 +274,14 @@ end
 ---@return nil
 function _quickfix.stop(opts)
   local job = _quickfix.job
-  if not job or job.done or job.exited then
+  if not job or job.done then
+    return
+  end
+  if job.exited then
+    -- background children may keep writing into the pipes, stop draining them
+    if job.drain_timer_cb then
+      job.drain_timer_cb()
+    end
     return
   end
 

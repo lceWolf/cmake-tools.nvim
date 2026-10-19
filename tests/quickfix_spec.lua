@@ -200,6 +200,51 @@ describe("quickfix runner", function()
     assert.is_false(quickfix.has_active_job(opts))
   end)
 
+  it("keeps reading while output still arrives after the process exited", function()
+    -- the background writer outlives the parent by ~200ms, but never stays silent for 100ms
+    local script = "(for i in $(seq 1 10); do sleep 0.02; echo late$i; done) & echo early"
+    local result = run("sh", { "-c", script })
+
+    local expected = { "early" }
+    for i = 1, 10 do
+      table.insert(expected, "late" .. i)
+    end
+    assert.equals(0, result.code)
+    assert.same(expected, result.outputs)
+  end)
+
+  it("stops draining when stopped after the process exited", function()
+    local code
+    local pidfile = vim.fn.tempname()
+    finally(function()
+      local pid = tonumber((vim.fn.readfile(pidfile)[1] or ""))
+      if pid then
+        vim.uv.kill(pid, 9)
+      end
+      vim.fn.delete(pidfile)
+    end)
+
+    -- the background writer never stays silent long enough for the drain to time out
+    local script = "(while true; do echo x; sleep 0.02; done) & echo $! > "
+      .. vim.fn.shellescape(pidfile)
+    quickfix.run("sh", "", {}, { "-c", script }, vim.uv.cwd(), opts, function(c)
+      code = c
+    end, function() end)
+    vim.wait(5000, function()
+      return quickfix.job ~= nil and quickfix.job.exited
+    end, 10)
+    vim.wait(300)
+    assert.is_nil(code)
+
+    quickfix.stop(opts)
+    vim.wait(1000, function()
+      return code ~= nil
+    end, 10)
+
+    assert.equals(0, code)
+    assert.is_false(quickfix.has_active_job(opts))
+  end)
+
   it("does not let a stale job write into the quickfix list of a newer run", function()
     local code_a, code_b
     quickfix.run("sleep", "", {}, { "10" }, vim.uv.cwd(), opts, function(c)
