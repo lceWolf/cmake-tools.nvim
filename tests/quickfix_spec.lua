@@ -116,6 +116,15 @@ describe("quickfix runner", function()
     assert.is_false(quickfix.has_active_job(opts))
   end)
 
+  it("keeps reading while output still arrives after the process exited", function()
+    -- the background writer outlives the parent, but never stays silent for 100ms
+    local script = "(for i in 1 2 3 4 5; do sleep 0.05; echo late$i; done) & echo early"
+    local result = run("sh", { "-c", script })
+
+    assert.equals(0, result.code)
+    assert.same({ "early", "late1", "late2", "late3", "late4", "late5" }, result.outputs)
+  end)
+
   it("does not let a stale job write into the quickfix list of a newer run", function()
     local code_a, code_b
     quickfix.run("sleep", "", {}, { "10" }, vim.uv.cwd(), opts, function(c)
