@@ -2,6 +2,7 @@ return {
   _all = {
     lua = "nlua",
     lpath = "lua/?.lua;lua/?/init.lua",
+    helper = "tests/helper.lua",
   },
   default = {
     ROOT = { "tests/" },
