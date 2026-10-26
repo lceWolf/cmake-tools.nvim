@@ -224,6 +224,15 @@ describe("Presets", function()
       }, presets.vendor)
     end)
 
+    it("parses a preset file without configurePresets", function()
+      write_json(join(tmp, "CMakePresets.json"), { version = 3, buildPresets = { { name = "b" } } })
+
+      local presets = Presets:parse(tmp)
+
+      assert.same({}, presets:get_configure_preset_names())
+      assert.same({ "None", "b" }, sorted(presets:get_build_preset_names({})))
+    end)
+
     it("raises an error for invalid JSON", function()
       vim.fn.writefile({ "{ not json" }, join(tmp, "CMakePresets.json"))
 

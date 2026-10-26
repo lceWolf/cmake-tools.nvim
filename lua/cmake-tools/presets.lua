@@ -142,6 +142,7 @@ function Presets:parse(cwd)
 
   -- Parents are looked up in an unprocessed snapshot, so building one preset neither modifies
   -- nor depends on the already resolved state of another
+  instance.configurePresets = instance.configurePresets or {}
   local unresolved = {}
   for _, preset in ipairs(instance.configurePresets) do
     if preset.name and not unresolved[preset.name] then
