@@ -168,6 +168,31 @@ describe("Presets", function()
       assert.same({ "a", "b" }, sorted(names))
     end)
 
+    it("merges nested objects of the user and project presets", function()
+      write_json(join(tmp, "CMakePresets.json"), {
+        version = 3,
+        vendor = { project = { x = 1 }, shared = { from = "project", only_project = true } },
+        configurePresets = { { name = "project" } },
+      })
+      -- An explicit include disables the implicit one, so CMakePresets.json is merged separately
+      write_json(join(tmp, "extra.json"), { version = 3 })
+      write_json(join(tmp, "CMakeUserPresets.json"), {
+        version = 3,
+        include = { "extra.json" },
+        vendor = { user = { y = 2 }, shared = { from = "user" } },
+        configurePresets = { { name = "user" } },
+      })
+
+      local presets = Presets:parse(tmp)
+
+      assert.same({ "project", "user" }, sorted(presets:get_configure_preset_names()))
+      assert.same({
+        project = { x = 1 },
+        user = { y = 2 },
+        shared = { from = "user", only_project = true },
+      }, presets.vendor)
+    end)
+
     it("raises an error for invalid JSON", function()
       vim.fn.writefile({ "{ not json" }, join(tmp, "CMakePresets.json"))
 

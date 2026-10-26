@@ -94,29 +94,27 @@ local Presets = {}
 ---@param cwd string
 ---@return Presets
 function Presets:parse(cwd)
-  local function merge_presets(lhs, rhs)
-    local ret = vim.deepcopy(lhs)
-    for k, v2 in pairs(rhs) do
-      local v1 = ret[k]
+  -- Merges copies of the values of src into dst. This function mutates dst.
+  local function merge_presets(dst, src)
+    for k, v2 in pairs(src) do
+      local v1 = dst[k]
 
       if v1 == nil then
-        ret[k] = vim.deepcopy(v2)
+        dst[k] = vim.deepcopy(v2)
       else
         if type(v1) == "table" and type(v2) == "table" then
           if vim.isarray(v1) and vim.isarray(v2) then
             for _, v in ipairs(v2) do
-              table.insert(v1, v)
+              table.insert(v1, vim.deepcopy(v))
             end
           else
             merge_presets(v1, v2)
           end
         else
-          -- If not tables or arrays, keep lhs
+          -- If not tables or arrays, keep dst
         end
       end
     end
-
-    return ret
   end
 
   local userPresetFile, presetFile = self.find_preset_files(cwd)
@@ -127,7 +125,7 @@ function Presets:parse(cwd)
   if presetFile then
     local presetData = decode(presetFile, visited)
     if presetData then
-      data = merge_presets(data, presetData)
+      merge_presets(data, presetData)
     end
   end
 
