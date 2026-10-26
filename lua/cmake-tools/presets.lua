@@ -46,6 +46,13 @@ local function decode(file, visited)
   local includes = data.include or {}
   local parentDir = vim.fs.dirname(abs_file_path)
 
+  -- Remember where each preset is defined, ${fileDir} refers to that directory
+  for key in pairs(KNOWN_PRESET_KEYS) do
+    for _, preset in ipairs(data[key] or {}) do
+      preset.fileDir = parentDir
+    end
+  end
+
   local filename_lower = vim.fn.fnamemodify(abs_file_path, ":t"):lower()
   local is_user_preset = filename_lower == "cmakeuserpresets.json"
     or filename_lower == "cmake-user-presets.json"

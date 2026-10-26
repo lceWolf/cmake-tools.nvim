@@ -122,7 +122,38 @@ describe("Presets", function()
       assert.equals(tmp, preset.cacheVariables.DIR)
     end)
 
-    pending("expands ${fileDir} to the directory of an included preset file")
+    it("expands ${fileDir} to the directory of the file defining the value", function()
+      local sub = join(tmp, "sub")
+      write_json(join(sub, "base.json"), {
+        version = 4,
+        configurePresets = {
+          {
+            name = "base",
+            hidden = true,
+            binaryDir = "${fileDir}/build",
+            cacheVariables = { BASE_DIR = "${fileDir}" },
+            environment = { BASE_DIR = "${fileDir}" },
+          },
+          { name = "included", cacheVariables = { DIR = "${fileDir}" } },
+        },
+      })
+      write_json(join(tmp, "CMakePresets.json"), {
+        version = 4,
+        include = { "sub/base.json" },
+        configurePresets = {
+          { name = "dev", inherits = "base", cacheVariables = { DIR = "${fileDir}" } },
+        },
+      })
+
+      local presets = Presets:parse(tmp)
+      local dev = presets:get_configure_preset("dev")
+
+      assert.equals(sub, presets:get_configure_preset("included").cacheVariables.DIR)
+      assert.equals(tmp, dev.cacheVariables.DIR)
+      assert.equals(sub, dev.cacheVariables.BASE_DIR)
+      assert.equals(sub, dev.environment.BASE_DIR)
+      assert.equals(join(sub, "build"), dev.binaryDirExpanded)
+    end)
 
     it("parses a directory with only CMakePresets.json", function()
       write_json(join(tmp, "CMakePresets.json"), {

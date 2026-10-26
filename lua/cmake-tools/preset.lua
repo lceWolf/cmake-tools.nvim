@@ -36,7 +36,7 @@ local function expandMacro(self, str)
   end
   str = str:gsub("${hostSystemName}", osys.iswin32 and "Windows" or vim.loop.os_uname().sysname)
   str = str:gsub("${fileDir}", function()
-    return self.cwd
+    return self.fileDir or self.cwd
   end)
   str = str:gsub("${dollar}", "$")
   str = str:gsub("${pathListSep}", osys.iswin32 and ";" or ":")
@@ -203,7 +203,22 @@ local NON_INHERITED_FIELDS = {
   cacheVariables = true,
   disabled = true,
   binaryDirExpanded = true,
+  fileDir = true,
 }
+
+-- Replaces ${fileDir} in all strings of value. Tables are modified in place.
+local function expandFileDir(value, file_dir)
+  if type(value) == "string" then
+    return (value:gsub("%${fileDir}", function()
+      return file_dir
+    end))
+  elseif type(value) == "table" then
+    for key, nested in pairs(value) do
+      value[key] = expandFileDir(nested, file_dir)
+    end
+  end
+  return value
+end
 
 local function parentNames(preset)
   if type(preset.inherits) == "string" then
@@ -225,6 +240,12 @@ local function flattenInheritance(preset, get_preset, visiting)
     if not NON_INHERITED_FIELDS[key] then
       fields[key] = vim.deepcopy(value)
     end
+  end
+
+  -- ${fileDir} is the directory of the file that defines a value, so it is expanded before the
+  -- fields of parents from other files are merged in
+  if preset.fileDir then
+    expandFileDir(fields, preset.fileDir)
   end
 
   -- Earlier parents win and each parent brings along everything it inherits itself
