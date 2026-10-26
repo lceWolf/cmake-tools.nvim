@@ -3,6 +3,7 @@ local utils = require("cmake-tools.utils")
 
 ---@class ConfigurePreset: CMakeConfigurePreset
 local Preset = {}
+Preset.__index = Preset
 
 local function expandMacro(self, str)
   if type(str) == "table" and str.value ~= nil then
@@ -150,28 +151,8 @@ local function resolveConditions(self)
     return eval(preset.condition)
   end
 
-  local function checkPreset(preset)
-    local queue = { preset }
-    local i = 0
-
-    while #queue ~= i do
-      local current = queue[i + 1]
-      local ret = evalCondition(current)
-      if ret ~= nil then
-        return ret
-      end
-
-      for _, nestedPreset in ipairs(current.inheritedPresets) do
-        table.insert(queue, nestedPreset)
-      end
-      i = i + 1
-    end
-
-    return nil
-  end
-  local enabled = checkPreset(self)
-
-  self.disabled = (enabled ~= nil) and (enabled == false)
+  -- The condition is inherited like any other field, so only our own one needs to be checked
+  self.disabled = evalCondition(self) == false
 end
 
 local function resolveEnvVars(self)
@@ -218,63 +199,59 @@ local NON_INHERITED_FIELDS = {
   description = true,
   displayName = true,
   cwd = true,
-  inheritedPresets = true,
   environment = true,
   cacheVariables = true,
   disabled = true,
   binaryDirExpanded = true,
-  __index = true,
 }
 
-local function parseTree(self, get_preset)
-  local queue = { self }
-  local queueIdx = 0
+local function parentNames(preset)
+  if type(preset.inherits) == "string" then
+    return { preset.inherits }
+  elseif type(preset.inherits) == "table" then
+    return preset.inherits
+  end
+  return {}
+end
 
-  while #queue ~= queueIdx do
-    local current = queue[queueIdx + 1]
-    current = setmetatable(current, self)
-
-    current.environment = current.environment or {}
-    current.cacheVariables = current.cacheVariables or {}
-    current.inheritedPresets = current.inheritedPresets or {}
-
-    local function update(nextPresetName)
-      local nextPreset = get_preset(nextPresetName)
-      if nextPreset then
-        table.insert(current.inheritedPresets, nextPreset)
-        table.insert(queue, nextPreset)
-      end
+-- Returns fresh copies of the fields 'preset' provides to its children, including the ones it
+-- inherits itself. The presets returned by 'get_preset' are only read, never modified.
+local function flattenInheritance(preset, get_preset, visiting)
+  local fields = {
+    environment = vim.deepcopy(preset.environment or {}),
+    cacheVariables = vim.deepcopy(preset.cacheVariables or {}),
+  }
+  for key, value in pairs(preset) do
+    if not NON_INHERITED_FIELDS[key] then
+      fields[key] = vim.deepcopy(value)
     end
-
-    if type(current.inherits) == "string" then
-      update(current.inherits)
-    else
-      if type(current.inherits) == "table" then
-        for _, inherited in ipairs(current.inherits) do
-          update(inherited)
-        end
-      end
-    end
-
-    queueIdx = queueIdx + 1
   end
 
-  local queueSize = #queue
-  if queueSize > 1 then
-    -- Iterate from the back to pull the parents value down the inheritance hierarchy
-    for i = queueSize - 1, 1, -1 do
-      local current = queue[i]
-      for _, parent in ipairs(current.inheritedPresets) do
-        current.environment = vim.tbl_deep_extend("keep", current.environment, parent.environment)
-        for key, value in pairs(parent) do
-          if current[key] == nil and not NON_INHERITED_FIELDS[key] then
-            current[key] = value
-          end
+  -- Earlier parents win and each parent brings along everything it inherits itself
+  for _, name in ipairs(parentNames(preset)) do
+    local parent = not visiting[name] and get_preset(name)
+    if parent then
+      visiting[name] = true
+      local inherited = flattenInheritance(parent, get_preset, visiting)
+      visiting[name] = nil
+
+      fields.environment = vim.tbl_deep_extend("keep", fields.environment, inherited.environment)
+      fields.cacheVariables =
+        vim.tbl_deep_extend("keep", fields.cacheVariables, inherited.cacheVariables)
+      for key, value in pairs(inherited) do
+        if fields[key] == nil then
+          fields[key] = value
         end
-        current.cacheVariables =
-          vim.tbl_deep_extend("keep", current.cacheVariables, parent.cacheVariables)
       end
     end
+  end
+
+  return fields
+end
+
+local function parseTree(self, get_preset)
+  for key, value in pairs(flattenInheritance(self, get_preset, { [self.name] = true })) do
+    self[key] = value
   end
 end
 
@@ -284,7 +261,6 @@ end
 ---@return ConfigurePreset
 function Preset:new(cwd, obj, get_preset)
   local instance = setmetatable(obj or {}, self)
-  instance.__index = self
   instance.environment = instance.environment or {}
   instance.cwd = cwd
 

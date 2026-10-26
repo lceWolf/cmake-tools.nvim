@@ -135,15 +135,20 @@ function Presets:parse(cwd)
   local instance = setmetatable(data, self)
   self.__index = self
 
-  local function createPreset(obj)
-    local function getPreset(name)
-      return instance:get_configure_preset(name, { include_hidden = true, include_disabled = true })
+  -- Parents are looked up in an unprocessed snapshot, so building one preset neither modifies
+  -- nor depends on the already resolved state of another
+  local unresolved = {}
+  for _, preset in ipairs(instance.configurePresets) do
+    if preset.name and not unresolved[preset.name] then
+      unresolved[preset.name] = vim.deepcopy(preset)
     end
-    Preset:new(cwd, obj, getPreset)
+  end
+  local function getPreset(name)
+    return unresolved[name]
   end
 
   for _, preset in ipairs(instance.configurePresets) do
-    createPreset(preset)
+    Preset:new(cwd, preset, getPreset)
   end
 
   instance.testPresets = instance.testPresets or {}

@@ -224,6 +224,30 @@ describe("Presets", function()
       assert.is_false(parsed:get_configure_preset("a", { include_disabled = true }).disabled)
       assert.is_true(parsed:get_configure_preset("b", { include_disabled = true }).disabled)
     end)
+
+    it("resolves a child the same regardless of whether its parent comes first", function()
+      local base = {
+        name = "base",
+        hidden = true,
+        cacheVariables = { NAME = "${presetName}" },
+        environment = { OUT = "$env{DIR}/out", DIR = "base" },
+      }
+      local child = { name = "child", inherits = "base", environment = { DIR = "child" } }
+
+      for _, order in ipairs({ { base, child }, { child, base } }) do
+        write_json(join(tmp, "CMakePresets.json"), { version = 3, configurePresets = order })
+
+        local parsed = Presets:parse(tmp)
+        local preset = parsed:get_configure_preset("child")
+
+        assert.equals("child", preset.cacheVariables.NAME)
+        assert.equals("child/out", preset.environment.OUT)
+
+        local resolved_base = parsed:get_configure_preset("base", { include_hidden = true })
+        assert.equals("base", resolved_base.cacheVariables.NAME)
+        assert.equals("base/out", resolved_base.environment.OUT)
+      end
+    end)
   end)
 
   describe("preset lookup", function()
@@ -716,6 +740,50 @@ describe("ConfigurePreset", function()
       }
 
       local preset = new_preset({ name = "child", inherits = "parent" }, parents)
+
+      assert.equals("Ninja", preset.generator)
+    end)
+
+    it("does not modify or share tables with its parents", function()
+      local parents = {
+        parent = { name = "parent", inherits = "grand", environment = { P = "p" } },
+        grand = {
+          name = "grand",
+          architecture = { value = "x64" },
+          cacheVariables = { G = "g" },
+          condition = { type = "const", value = true },
+        },
+      }
+      local snapshot = vim.deepcopy(parents)
+
+      local preset = new_preset({ name = "child", inherits = "parent" }, parents)
+
+      assert.same(snapshot, parents)
+      assert.is_nil(getmetatable(parents.parent))
+      assert.same({ value = "x64" }, preset.architecture)
+      assert.are_not.equal(parents.grand.architecture, preset.architecture)
+      assert.are_not.equal(parents.grand.condition, preset.condition)
+    end)
+
+    it("inherits a shared ancestor of multiple parents", function()
+      local parents = {
+        one = { name = "one", inherits = "grand" },
+        two = { name = "two", inherits = "grand", cacheVariables = { T = "two" } },
+        grand = { name = "grand", cacheVariables = { G = "g" } },
+      }
+
+      local preset = new_preset({ name = "child", inherits = { "one", "two" } }, parents)
+
+      assert.same({ G = "g", T = "two" }, preset.cacheVariables)
+    end)
+
+    it("stops at inheritance cycles", function()
+      local parents = {
+        a = { name = "a", inherits = "b", generator = "Ninja" },
+        b = { name = "b", inherits = { "a", "child" } },
+      }
+
+      local preset = new_preset({ name = "child", inherits = "a" }, parents)
 
       assert.equals("Ninja", preset.generator)
     end)
