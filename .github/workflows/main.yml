@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Clone repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
 
       - name: Stylua
-        uses: JohnnyMorganz/stylua-action@v3
+        uses: JohnnyMorganz/stylua-action@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: v0.17.1 # NOTE: we recommend pinning to a specific version in case of formatting changes
@@ -30,7 +30,7 @@ jobs:
       matrix:
         nvim: [v0.10.0, stable]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: rhysd/action-setup-vim@v1
         # Unpack on the same filesystem as $HOME, see rhysd/action-setup-vim#80
         env:
@@ -38,10 +38,10 @@ jobs:
         with:
           neovim: true
           version: ${{ matrix.nvim }}
-      - uses: leafo/gh-actions-lua@v10
+      - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1.5"
-      - uses: leafo/gh-actions-luarocks@v4
+      - uses: leafo/gh-actions-luarocks@v6
       - name: Run tests
         run: |
           nvim --version
