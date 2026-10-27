@@ -1,4 +1,21 @@
-local has_notify, notify = pcall(require, "notify")
+local function get_backend()
+  local has_notify, notify = pcall(require, "notify")
+  if has_notify then
+    return notify
+  end
+  local has_snacks, snacks = pcall(require, "snacks")
+  if has_snacks and snacks.config.notifier.enabled then
+    return function(msg, level, opts)
+      -- snacks only reuses the window of a notification replaced by `id`,
+      -- with `replace` alone the old window stays open
+      return snacks.notifier.notify(
+        msg,
+        level,
+        vim.tbl_extend("force", opts, { id = opts.replace })
+      )
+    end
+  end
+end
 
 local function render(self)
   if self.closed then
@@ -7,7 +24,7 @@ local function render(self)
     self.opts.replace = self.id
   end
 
-  self.id = notify(self.msg, self.level, self.opts)
+  self.id = self.backend(self.msg, self.level, self.opts)
   self.opts.replace = nil
   self.closed = false
 end
@@ -25,7 +42,8 @@ function Notification:new(type)
 
   instance.spinner_idx = 1
   instance.closed = true
-  instance.enabled = has_notify and config[type].enabled
+  instance.backend = get_backend()
+  instance.enabled = instance.backend ~= nil and config[type].enabled
 
   instance.spinnerTimer = vim.loop.new_timer()
 
@@ -68,6 +86,7 @@ function Notification:notify(msg, level, opts)
   local on_open = self.opts.on_open
 
   self.opts.hide_from_history = true
+  self.opts.history = false
   self.opts.title = "CMakeTools"
   self.opts.on_close = function(win)
     self.closed = true
