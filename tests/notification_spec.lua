@@ -71,6 +71,30 @@ describe("notification backend", function()
     assert.same({}, calls)
   end)
 
+  it("cycles through all spinner icons and keeps spinning on new messages", function()
+    local icons = {}
+    package.loaded.notify = function(_, _, opts)
+      table.insert(icons, opts.icon or "none")
+      return 1
+    end
+    notifications.spinner = { "a", "b", "c" }
+    notifications.refresh_rate_ms = 1
+
+    local ntfy = new_notification()
+    ntfy:notify("cmake", "info")
+    ntfy:startSpinner()
+    vim.wait(1000, function()
+      return #icons >= 8
+    end)
+    ntfy:notify("[ 50%] Building", "info")
+    ntfy:stopSpinner()
+
+    notifications.spinner = nil
+    notifications.refresh_rate_ms = nil
+    assert.same({ "none", "b", "c", "a", "b", "c", "a", "b" }, vim.list_slice(icons, 1, 8))
+    assert.is_true(vim.tbl_contains({ "a", "b", "c" }, icons[#icons]))
+  end)
+
   it("is disabled without a notification plugin", function()
     local ntfy = new_notification()
 

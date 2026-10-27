@@ -59,7 +59,7 @@ function Notification:startSpinner()
     config.refresh_rate_ms,
     config.refresh_rate_ms,
     vim.schedule_wrap(function()
-      self.spinner_idx = (self.spinner_idx + 1) % #config.spinner
+      self.spinner_idx = self.spinner_idx % #config.spinner + 1
 
       self.opts.replace = self.id
       self.opts.icon = config.spinner[self.spinner_idx]
@@ -81,6 +81,10 @@ function Notification:notify(msg, level, opts)
   self.msg = msg or ""
   self.level = level
   self.opts = opts or {}
+  -- keep spinning while new messages arrive instead of falling back to the level icon
+  if self.spinnerRunning and self.opts.icon == nil then
+    self.opts.icon = config.spinner[self.spinner_idx]
+  end
 
   local on_close = self.opts.on_close
   local on_open = self.opts.on_open
